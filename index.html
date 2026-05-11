@@ -1,131 +1,117 @@
 <!DOCTYPE html>
-<html>
+<html lang="no">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IFC Batch Exporter</title>
-    <script src="https://app.connect.trimble.com/tc/api/2.0/api.js"></script>
+    
+    <!-- Samme API som i Dashboard-eksempelet ditt -->
+    <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
+    
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; background-color: #f4f7f9; color: #333; }
-        .container { max-width: 400px; margin: auto; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f9fafb; padding: 15px; color: #1f2937; }
+        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { font-size: 20px; color: #111827; margin-top: 0; }
+        p { color: #6b7280; font-size: 13px; }
         
-        button { 
-            background: #0078d4; color: white; border: none; padding: 12px; 
-            border-radius: 4px; cursor: pointer; width: 100%; font-weight: 600;
-            transition: background 0.2s;
+        .btn { 
+            background-color: #3b82f6; color: white; border: none; border-radius: 5px; 
+            padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer; 
+            width: 100%; transition: 0.2s;
         }
-        button:hover { background: #005a9e; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
+        .btn:hover { background-color: #2563eb; }
+        .btn:disabled { background-color: #d1d5db; cursor: not-allowed; }
 
-        #results { margin-top: 20px; }
-        
-        .model-card { 
-            background: white; border-radius: 6px; padding: 15px; 
-            margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            border-left: 5px solid #0078d4;
-        }
-        .model-name { font-weight: bold; display: block; margin-bottom: 5px; font-size: 14px; }
-        .status-text { font-size: 11px; font-weight: bold; text-transform: uppercase; color: #0078d4; }
-        
         #log { 
-            margin-top: 15px; font-size: 11px; background: #222; color: #0f0; 
-            padding: 10px; border-radius: 4px; max-height: 150px; overflow-y: auto; 
-            font-family: monospace;
+            margin-top: 20px; background: #111827; color: #10b981; 
+            padding: 10px; border-radius: 5px; font-family: monospace; 
+            font-size: 12px; height: 150px; overflow-y: auto; 
         }
+        .status-msg { margin-top: 10px; font-weight: 600; font-size: 13px; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h3>IFC Batch Exporter</h3>
-    <p style="font-size: 12px; color: #666;">Dette verktøyet laster ned alle aktive IFC-modeller til en valgt mappe på din PC.</p>
-    
-    <button id="exportBtn">Start Eksport</button>
-    
-    <div id="results"></div>
-    <div id="log">> Klar...</div>
-</div>
+    <div class="container">
+        <h1>IFC Batch Exporter</h1>
+        <p>Laster ned alle synlige IFC-modeller til din maskin.</p>
 
-<script>
-    const tcSpace = TrimbleConnect.init();
-
-    function log(msg) {
-        const logBox = document.getElementById('log');
-        const entry = document.createElement('div');
-        entry.innerText = `> ${msg}`;
-        logBox.appendChild(entry);
-        logBox.scrollTop = logBox.scrollHeight;
-    }
-
-    document.getElementById('exportBtn').addEventListener('click', async () => {
-        const btn = document.getElementById('exportBtn');
-        const resultsDiv = document.getElementById('results');
+        <button id="exportBtn" class="btn">Velg mappe & start eksport</button>
         
-        resultsDiv.innerHTML = "";
-        btn.disabled = true;
-        log("Starter prosess...");
+        <div id="status" class="status-msg">Venter på tilkobling...</div>
+        <div id="log">> Initialiserer...</div>
+    </div>
 
-        try {
-            // 1. Sjekk for nettleserstøtte
-            if (!window.showDirectoryPicker) {
-                alert("Nettleseren din støtter ikke direkte lagring. Vennligst bruk Chrome eller Edge.");
-                btn.disabled = false;
-                return;
-            }
+    <script>
+        let API = null;
 
-            // 2. Hent modeller fra vieweren
-            const loadedModels = await tcSpace.viewer.getModels();
-            const ifcModels = loadedModels.filter(m => m.name.toLowerCase().endsWith('.ifc'));
-            
-            if (ifcModels.length === 0) {
-                log("Ingen IFC-modeller funnet i visningen.");
-                resultsDiv.innerHTML = "<p>Ingen IFC-modeller er lastet inn.</p>";
-                btn.disabled = false;
-                return;
-            }
+        // 1. Koble til API på nøyaktig samme måte som Dashboard-eksempelet
+        TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
+            // Håndterer eventer hvis nødvendig
+        }).then((api) => {
+            API = api;
+            document.getElementById('log').innerText = "> Koblet til Trimble Connect.";
+            document.getElementById('status').innerText = "Klar";
+        });
 
-            // 3. Bruker velger mappe
-            log("Venter på mappe-valg...");
-            const dirHandle = await window.showDirectoryPicker();
-
-            // 4. Loop gjennom modeller
-            for (const model of ifcModels) {
-                log(`Laster ned: ${model.name}`);
-                
-                try {
-                    const fileData = await tcSpace.project.getFile(model.id);
-                    const response = await fetch(fileData.downloadUrl);
-                    const blob = await response.blob();
-
-                    const fileHandle = await dirHandle.getFileHandle(model.name, { create: true });
-                    const writable = await fileHandle.createWritable();
-                    await writable.write(blob);
-                    await writable.close();
-
-                    addModelCard(model.name, "Fullført");
-                } catch (err) {
-                    log(`Feil med ${model.name}: ${err.message}`);
-                }
-            }
-
-            log("Ferdig!");
-
-        } catch (err) {
-            log("Feil: " + err.message);
-        } finally {
-            btn.disabled = false;
+        function log(msg) {
+            const logDiv = document.getElementById('log');
+            logDiv.innerText += `\n> ${msg}`;
+            logDiv.scrollTop = logDiv.scrollHeight;
         }
-    });
 
-    function addModelCard(name, status) {
-        const resultsDiv = document.getElementById('results');
-        const card = document.createElement('div');
-        card.className = 'model-card';
-        card.innerHTML = `
-            <span class="status-text">✅ ${status}</span>
-            <span class="model-name">${name}</span>
-        `;
-        resultsDiv.appendChild(card);
-    }
-</script>
+        document.getElementById('exportBtn').addEventListener('click', async () => {
+            if (!API) return;
 
+            try {
+                // Sjekk modeller
+                const models = await API.viewer.getModels();
+                const ifcModels = models.filter(m => m.name.toLowerCase().endsWith('.ifc'));
+
+                if (ifcModels.length === 0) {
+                    log("Ingen IFC-filer funnet i visningen.");
+                    return;
+                }
+
+                // Sjekk nettleser-støtte
+                if (!window.showDirectoryPicker) {
+                    alert("Bruk Chrome eller Edge for å eksportere til mappe.");
+                    return;
+                }
+
+                const dirHandle = await window.showDirectoryPicker();
+                const btn = document.getElementById('exportBtn');
+                btn.disabled = true;
+
+                log(`Starter eksport av ${ifcModels.length} filer...`);
+
+                for (const model of ifcModels) {
+                    log(`Henter ${model.name}...`);
+                    
+                    try {
+                        const fileData = await API.project.getFile(model.id);
+                        const response = await fetch(fileData.downloadUrl);
+                        const blob = await response.blob();
+
+                        const fileHandle = await dirHandle.getFileHandle(model.name, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        await writable.write(blob);
+                        await writable.close();
+                        log(`OK: ${model.name}`);
+                    } catch (e) {
+                        log(`FEIL med ${model.name}: ${e.message}`);
+                    }
+                }
+
+                document.getElementById('status').innerText = "Eksport ferdig!";
+                log("Batch eksport fullført.");
+
+            } catch (err) {
+                log("Kritisk feil: " + err.message);
+            } finally {
+                document.getElementById('exportBtn').disabled = false;
+            }
+        });
+    </script>
 </body>
 </html>
