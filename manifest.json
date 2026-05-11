@@ -9,8 +9,8 @@
       "type": "viewer-side-panel",
       "id": "mmi-panel",
       "name": "MMI/Eksport",
-      "url": "index.html",
-      "icon": "https://img.icons8.com/color/48/000000/download.png"
+      "url": "https://ditt-brukernavn.github.io/ditt-prosjektnavn/index.html",
+      "icon": "https://static.vecteezy.com/system/resources/previews/020/327/866/non_2x/mmi-letter-logo-design-on-white-background-mmi-creative-circle-letter-logo-concept-mmi-letter-design-vector.jpg"
     }
   ],
   "permissions": [
