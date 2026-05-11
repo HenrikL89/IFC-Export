@@ -3,120 +3,116 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IFC Batch Exporter</title>
-    <!-- Den nyeste API-kilden -->
+    <title>IFC Viewer Exporter</title>
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f9fafb; padding: 15px; color: #1f2937; }
         .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #0078d4; }
-        h1 { font-size: 20px; color: #0078d4; margin-top: 0; }
+        h1 { font-size: 18px; color: #0078d4; margin-top: 0; }
         .btn { 
             background-color: #0078d4; color: white; border: none; border-radius: 5px; 
             padding: 12px 20px; font-size: 14px; font-weight: 600; cursor: pointer; 
-            width: 100%; transition: 0.2s;
+            width: 100%; transition: 0.2s; margin-bottom: 10px;
         }
         .btn:hover { background-color: #005a9e; }
         .btn:disabled { background-color: #d1d5db; cursor: not-allowed; }
         #log { 
             margin-top: 15px; background: #111827; color: #10b981; 
-            padding: 10px; border-radius: 4px; font-family: monospace; 
-            font-size: 11px; height: 160px; overflow-y: auto; 
+            padding: 10px; border-radius: 5px; font-family: monospace; 
+            font-size: 11px; height: 200px; overflow-y: auto; 
         }
-        .info-box { background: #fffbeb; border: 1px solid #f59e0b; padding: 10px; border-radius: 5px; font-size: 12px; margin-bottom: 15px; color: #92400e; }
+        .info { font-size: 12px; color: #6b7280; margin-bottom: 10px; }
+        .count-badge { background: #0078d4; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h1>IFC Batch Exporter</h1>
-        
-        <div class="info-box">
-            <strong>Merk:</strong> Filene lagres i din standard nedlastingsmappe. <br>
-            <em>Tips: Endre nedlastingsmappe i Chrome-innstillinger for å treffe din prosjektmappe automatisk.</em>
-        </div>
+        <h1>IFC Viewer Exporter</h1>
+        <p class="info">Laster ned kun IFC-modeller som er <strong>lastet inn i 3D-vinduet</strong>.</p>
 
-        <button id="exportBtn" class="btn">Start nedlasting av IFC-filer</button>
+        <button id="scanBtn" class="btn" style="background-color: #4b5563;">1. Finn modeller i vieweren</button>
+        <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
         
-        <div id="status" style="margin-top:10px; font-weight:bold; font-size:13px;">Venter på API...</div>
-        <div id="log">> Initialiserer...</div>
+        <div id="status" style="margin-top:10px; font-weight:bold; font-size:13px;">Klar</div>
+        <div id="log">> Velkommen. Klikk "Finn modeller" for å starte.</div>
     </div>
 
     <script>
         let API = null;
+        let selectedModels = [];
 
-        // Koble til Trimble Connect API
         TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
         }).then((api) => {
             API = api;
-            document.getElementById('log').innerText = "> Koblet til Trimble Connect.";
-            document.getElementById('status').innerText = "Klar";
+            log("Tilkoblet Trimble Connect.");
         });
 
         function log(msg) {
             const logDiv = document.getElementById('log');
-            logDiv.innerText += `\n> ${msg}`;
+            logDiv.innerHTML += `<div>> ${msg}</div>`;
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
-        // Funksjon som trigger vanlig nedlasting uten showDirectoryPicker
         function downloadFile(url, filename) {
             const a = document.createElement('a');
             a.href = url;
             a.download = filename;
-            a.target = '_blank'; // Åpner i ny fane for å unngå iframe-sperre
             document.body.appendChild(a);
             a.click();
-            setTimeout(() => document.body.removeChild(a), 1000);
+            setTimeout(() => document.body.removeChild(a), 500);
         }
 
-        document.getElementById('exportBtn').addEventListener('click', async () => {
-            if (!API) {
-                alert("API er ikke klart ennå.");
-                return;
-            }
-
+        // Steg 1: Finn kun de modellene som er i vieweren
+        document.getElementById('scanBtn').addEventListener('click', async () => {
+            if (!API) return;
             try {
-                const models = await API.viewer.getModels();
-                const ifcModels = models.filter(m => m.name.toLowerCase().endsWith('.ifc'));
+                log("Skanner 3D-vinduet...");
+                const allModels = await API.viewer.getModels();
+                
+                // Filtrer ut kun IFC-filer
+                selectedModels = allModels.filter(m => m.name.toLowerCase().endsWith('.ifc'));
 
-                if (ifcModels.length === 0) {
-                    log("Ingen IFC-filer funnet i visningen.");
-                    return;
+                if (selectedModels.length === 0) {
+                    log("Ingen IFC-modeller funnet i 3D-vinduet.");
+                    document.getElementById('exportBtn').disabled = true;
+                } else {
+                    log(`Fant ${selectedModels.length} IFC-modeller i vieweren:`);
+                    selectedModels.forEach(m => log(` - ${m.name}`));
+                    document.getElementById('exportBtn').disabled = false;
+                    document.getElementById('status').innerHTML = `Funnet: <span class="count-badge">${selectedModels.length} filer</span>`;
                 }
-
-                const btn = document.getElementById('exportBtn');
-                btn.disabled = true;
-                log(`Starter eksport av ${ifcModels.length} filer...`);
-
-                for (let i = 0; i < ifcModels.length; i++) {
-                    const model = ifcModels[i];
-                    document.getElementById('status').innerText = `Henter (${i+1}/${ifcModels.length}): ${model.name}`;
-                    
-                    try {
-                        // Henter selve nedlastingslenken fra Trimble
-                        const fileData = await API.project.getFile(model.id);
-                        
-                        // Starter nedlasting
-                        downloadFile(fileData.downloadUrl, model.name);
-                        
-                        log(`OK: ${model.name}`);
-                        
-                        // Vent litt mellom hver fil så nettleseren ikke blokkerer
-                        await new Promise(r => setTimeout(r, 1000));
-                    } catch (e) {
-                        log(`FEIL: ${model.name} (${e.message})`);
-                    }
-                }
-
-                document.getElementById('status').innerText = "Ferdig!";
-                log("Alle filer er sendt til nedlasting.");
-
             } catch (err) {
-                log("Feil: " + err.message);
-                console.error(err);
-            } finally {
-                document.getElementById('exportBtn').disabled = false;
+                log("Feil ved skanning: " + err.message);
             }
+        });
+
+        // Steg 2: Last ned de identifiserte modellene
+        document.getElementById('exportBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('exportBtn');
+            btn.disabled = true;
+
+            log("--- Starter nedlasting ---");
+            for (let i = 0; i < selectedModels.length; i++) {
+                const model = selectedModels[i];
+                document.getElementById('status').innerText = `Laster ned (${i+1}/${selectedModels.length})...`;
+                
+                try {
+                    // Vi må bruke model.id eller model.modelId for å hente selve filen fra prosjektet
+                    const fileData = await API.project.getFile(model.id);
+                    
+                    downloadFile(fileData.downloadUrl, model.name);
+                    log(`Ferdig: ${model.name}`);
+                    
+                    // Pause for å unngå nettleser-sperre
+                    await new Promise(r => setTimeout(r, 1000));
+                } catch (e) {
+                    log(`Kunne ikke hente ${model.name}`);
+                }
+            }
+            document.getElementById('status').innerText = "Ferdig!";
+            log("Alle valgte filer er sendt til nedlasting.");
+            btn.disabled = false;
         });
     </script>
 </body>
