@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "id": "ifc-exporter-henrikl89",
+  "id": "ifc-batch-export-v2",
   "name": "IFC Batch Exporter",
   "version": "1.0.0",
   "publisher": "HenrikL89",
