@@ -1,6 +1,21 @@
 {
-  "title": "Interactive Topics Dashboard",
-  "url": "https://henrikl89.github.io/IFC-Export/index.html",
-  "description": "Live visualization and interactive charting of BCF Topics",
-  "icon": "https://raw.githubusercontent.com/ionic-team/ionicons/main/src/svg/bar-chart.svg"
+  "manifestVersion": 1,
+  "id": "henrik-exporter-final",
+  "name": "IFC Exporter",
+  "version": "1.0.0",
+  "publisher": "Henrik",
+  "entryPoints": [
+    {
+      "type": "viewer-side-panel",
+      "id": "ifc-export-sidepanel",
+      "name": "IFC Eksport",
+      "url": "https://henrikl89.github.io/IFC-Export/index.html",
+      "icon": "https://img.icons8.com/color/48/000000/download.png"
+    }
+  ],
+  "permissions": [
+    "viewer.read",
+    "project.read",
+    "file.read"
+  ]
 }
