@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IFC Batch Exporter</title>
+    <!-- Den nyeste API-kilden -->
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f9fafb; padding: 15px; color: #1f2937; }
-        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #0078d4; }
         h1 { font-size: 20px; color: #0078d4; margin-top: 0; }
-        p { color: #6b7280; font-size: 13px; }
         .btn { 
             background-color: #0078d4; color: white; border: none; border-radius: 5px; 
             padding: 12px 20px; font-size: 14px; font-weight: 600; cursor: pointer; 
@@ -18,30 +18,33 @@
         .btn:hover { background-color: #005a9e; }
         .btn:disabled { background-color: #d1d5db; cursor: not-allowed; }
         #log { 
-            margin-top: 20px; background: #111827; color: #10b981; 
-            padding: 10px; border-radius: 5px; font-family: monospace; 
-            font-size: 12px; height: 180px; overflow-y: auto; 
+            margin-top: 15px; background: #111827; color: #10b981; 
+            padding: 10px; border-radius: 4px; font-family: monospace; 
+            font-size: 11px; height: 160px; overflow-y: auto; 
         }
-        .status-msg { margin-top: 10px; font-weight: 600; font-size: 13px; }
-        .warning { color: #f59e0b; font-size: 11px; margin-top: 5px; }
+        .info-box { background: #fffbeb; border: 1px solid #f59e0b; padding: 10px; border-radius: 5px; font-size: 12px; margin-bottom: 15px; color: #92400e; }
     </style>
 </head>
 <body>
 
     <div class="container">
         <h1>IFC Batch Exporter</h1>
-        <p>Laster ned alle synlige IFC-modeller til din "Nedlastinger"-mappe.</p>
-
-        <button id="exportBtn" class="btn">Last ned alle IFC-filer</button>
-        <p class="warning">Merk: Nettleseren din kan spørre om tillatelse til å laste ned flere filer samtidig. Svar "Tillat".</p>
         
-        <div id="status" class="status-msg">Venter på tilkobling...</div>
+        <div class="info-box">
+            <strong>Merk:</strong> Filene lagres i din standard nedlastingsmappe. <br>
+            <em>Tips: Endre nedlastingsmappe i Chrome-innstillinger for å treffe din prosjektmappe automatisk.</em>
+        </div>
+
+        <button id="exportBtn" class="btn">Start nedlasting av IFC-filer</button>
+        
+        <div id="status" style="margin-top:10px; font-weight:bold; font-size:13px;">Venter på API...</div>
         <div id="log">> Initialiserer...</div>
     </div>
 
     <script>
         let API = null;
 
+        // Koble til Trimble Connect API
         TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
         }).then((api) => {
             API = api;
@@ -55,19 +58,22 @@
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
-        // Funksjon for å laste ned en fil via nettleseren
-        function triggerDownload(url, filename) {
+        // Funksjon som trigger vanlig nedlasting uten showDirectoryPicker
+        function downloadFile(url, filename) {
             const a = document.createElement('a');
             a.href = url;
             a.download = filename;
-            a.style.display = 'none';
+            a.target = '_blank'; // Åpner i ny fane for å unngå iframe-sperre
             document.body.appendChild(a);
             a.click();
             setTimeout(() => document.body.removeChild(a), 1000);
         }
 
         document.getElementById('exportBtn').addEventListener('click', async () => {
-            if (!API) return;
+            if (!API) {
+                alert("API er ikke klart ennå.");
+                return;
+            }
 
             try {
                 const models = await API.viewer.getModels();
@@ -80,31 +86,34 @@
 
                 const btn = document.getElementById('exportBtn');
                 btn.disabled = true;
-                log(`Starter nedlasting av ${ifcModels.length} filer...`);
+                log(`Starter eksport av ${ifcModels.length} filer...`);
 
-                for (const model of ifcModels) {
-                    log(`Henter nedlastingslenke for ${model.name}...`);
+                for (let i = 0; i < ifcModels.length; i++) {
+                    const model = ifcModels[i];
+                    document.getElementById('status').innerText = `Henter (${i+1}/${ifcModels.length}): ${model.name}`;
                     
                     try {
+                        // Henter selve nedlastingslenken fra Trimble
                         const fileData = await API.project.getFile(model.id);
                         
-                        // Bruker standard nettlesernedlasting i stedet for showDirectoryPicker
-                        triggerDownload(fileData.downloadUrl, model.name);
+                        // Starter nedlasting
+                        downloadFile(fileData.downloadUrl, model.name);
                         
-                        log(`Lagt i kø: ${model.name}`);
+                        log(`OK: ${model.name}`);
                         
-                        // Vi legger inn en liten pause mellom hver fil for at nettleseren skal rekke å starte dem
-                        await new Promise(resolve => setTimeout(resolve, 800));
+                        // Vent litt mellom hver fil så nettleseren ikke blokkerer
+                        await new Promise(r => setTimeout(r, 1000));
                     } catch (e) {
-                        log(`FEIL med ${model.name}: ${e.message}`);
+                        log(`FEIL: ${model.name} (${e.message})`);
                     }
                 }
 
-                document.getElementById('status').innerText = "Nedlasting ferdig!";
-                log("Alle filer er sendt til nettleseren.");
+                document.getElementById('status').innerText = "Ferdig!";
+                log("Alle filer er sendt til nedlasting.");
 
             } catch (err) {
-                log("Kritisk feil: " + err.message);
+                log("Feil: " + err.message);
+                console.error(err);
             } finally {
                 document.getElementById('exportBtn').disabled = false;
             }
