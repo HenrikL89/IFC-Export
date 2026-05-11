@@ -1,104 +1,97 @@
 <!DOCTYPE html>
-<html lang="no">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IFC Batch Exporter</title>
-    
-    <!-- Den nye script-kilden du sendte -->
-    <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
-
+    <script src="https://app.connect.trimble.com/tc/api/2.0/api.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; background: #f4f4f4; color: #333; }
-        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h3 { margin-top: 0; color: #0078d4; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; background-color: #f4f7f9; color: #333; }
+        .container { max-width: 400px; margin: auto; }
+        
         button { 
             background: #0078d4; color: white; border: none; padding: 12px; 
-            border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; 
-            margin-top: 10px; font-size: 14px;
+            border-radius: 4px; cursor: pointer; width: 100%; font-weight: 600;
+            transition: background 0.2s;
         }
         button:hover { background: #005a9e; }
         button:disabled { background: #ccc; cursor: not-allowed; }
-        #status { margin: 15px 0; font-size: 13px; font-weight: bold; color: #555; }
-        #log { 
-            font-size: 11px; background: #1e1e1e; color: #00ff00; 
-            padding: 10px; border-radius: 4px; height: 180px; overflow-y: auto; 
-            font-family: 'Consolas', monospace; line-height: 1.4;
+
+        #results { margin-top: 20px; }
+        
+        .model-card { 
+            background: white; border-radius: 6px; padding: 15px; 
+            margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-left: 5px solid #0078d4;
         }
-        .error { color: #ff5f56; }
+        .model-name { font-weight: bold; display: block; margin-bottom: 5px; font-size: 14px; }
+        .status-text { font-size: 11px; font-weight: bold; text-transform: uppercase; color: #0078d4; }
+        
+        #log { 
+            margin-top: 15px; font-size: 11px; background: #222; color: #0f0; 
+            padding: 10px; border-radius: 4px; max-height: 150px; overflow-y: auto; 
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
 
-<div class="card">
+<div class="container">
     <h3>IFC Batch Exporter</h3>
-    <p style="font-size: 12px;">Eksporter alle aktive IFC-modeller til valgt mappe.</p>
+    <p style="font-size: 12px; color: #666;">Dette verktøyet laster ned alle aktive IFC-modeller til en valgt mappe på din PC.</p>
     
-    <button id="exportBtn">Velg mappe & start eksport</button>
+    <button id="exportBtn">Start Eksport</button>
     
-    <div id="status">Klar til bruk</div>
-    <div id="log">> Venter på start...</div>
+    <div id="results"></div>
+    <div id="log">> Klar...</div>
 </div>
 
 <script>
-    let tcAPI;
+    const tcSpace = TrimbleConnect.init();
 
-    // Initialiserer den nye versjonen av API-et
-    window.TrimbleConnectWorkspace.connect(window.parent, (event, data) => {
-        switch (event) {
-            case "extension.accessToken":
-                // Kan brukes hvis man trenger autentisering
-                break;
-        }
-    }, "*").then((api) => {
-        tcAPI = api;
-        log("Tilkoblet Trimble Connect API.");
-    });
-
-    const btn = document.getElementById('exportBtn');
-    const logBox = document.getElementById('log');
-    const statusTxt = document.getElementById('status');
-
-    function log(msg, isError = false) {
-        const div = document.createElement('div');
-        if (isError) div.className = 'error';
-        div.innerText = `> ${msg}`;
-        logBox.appendChild(div);
+    function log(msg) {
+        const logBox = document.getElementById('log');
+        const entry = document.createElement('div');
+        entry.innerText = `> ${msg}`;
+        logBox.appendChild(entry);
         logBox.scrollTop = logBox.scrollHeight;
     }
 
-    btn.addEventListener('click', async () => {
-        if (!tcAPI) {
-            log("API ikke lastet ennå. Vent et sekund.", true);
-            return;
-        }
+    document.getElementById('exportBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('exportBtn');
+        const resultsDiv = document.getElementById('results');
+        
+        resultsDiv.innerHTML = "";
+        btn.disabled = true;
+        log("Starter prosess...");
 
         try {
-            statusTxt.innerText = "Sjekker modeller...";
-            const models = await tcAPI.viewer.getModels();
-            const ifcModels = models.filter(m => m.name.toLowerCase().endsWith('.ifc'));
-
-            if (ifcModels.length === 0) {
-                log("Ingen IFC-filer funnet i visningen.", true);
-                statusTxt.innerText = "Ingen filer funnet";
-                return;
-            }
-
+            // 1. Sjekk for nettleserstøtte
             if (!window.showDirectoryPicker) {
-                alert("Nettleseren din støtter ikke direkte lagring. Bruk Chrome eller Edge.");
+                alert("Nettleseren din støtter ikke direkte lagring. Vennligst bruk Chrome eller Edge.");
+                btn.disabled = false;
                 return;
             }
-            
-            const dirHandle = await window.showDirectoryPicker();
-            btn.disabled = true;
-            log(`Starter eksport av ${ifcModels.length} filer...`);
 
-            for (let i = 0; i < ifcModels.length; i++) {
-                const model = ifcModels[i];
-                statusTxt.innerText = `Laster ned (${i + 1}/${ifcModels.length}): ${model.name}`;
+            // 2. Hent modeller fra vieweren
+            const loadedModels = await tcSpace.viewer.getModels();
+            const ifcModels = loadedModels.filter(m => m.name.toLowerCase().endsWith('.ifc'));
+            
+            if (ifcModels.length === 0) {
+                log("Ingen IFC-modeller funnet i visningen.");
+                resultsDiv.innerHTML = "<p>Ingen IFC-modeller er lastet inn.</p>";
+                btn.disabled = false;
+                return;
+            }
+
+            // 3. Bruker velger mappe
+            log("Venter på mappe-valg...");
+            const dirHandle = await window.showDirectoryPicker();
+
+            // 4. Loop gjennom modeller
+            for (const model of ifcModels) {
+                log(`Laster ned: ${model.name}`);
                 
                 try {
-                    const fileData = await tcAPI.project.getFile(model.id);
+                    const fileData = await tcSpace.project.getFile(model.id);
                     const response = await fetch(fileData.downloadUrl);
                     const blob = await response.blob();
 
@@ -107,21 +100,31 @@
                     await writable.write(blob);
                     await writable.close();
 
-                    log(`Suksess: ${model.name}`);
+                    addModelCard(model.name, "Fullført");
                 } catch (err) {
-                    log(`Feil med ${model.name}: ${err.message}`, true);
+                    log(`Feil med ${model.name}: ${err.message}`);
                 }
             }
 
-            statusTxt.innerText = "Ferdig!";
-            log("--- Batch eksport fullført ---");
+            log("Ferdig!");
 
-        } catch (error) {
-            log("Feil: " + error.message, true);
+        } catch (err) {
+            log("Feil: " + err.message);
         } finally {
             btn.disabled = false;
         }
     });
+
+    function addModelCard(name, status) {
+        const resultsDiv = document.getElementById('results');
+        const card = document.createElement('div');
+        card.className = 'model-card';
+        card.innerHTML = `
+            <span class="status-text">✅ ${status}</span>
+            <span class="model-name">${name}</span>
+        `;
+        resultsDiv.appendChild(card);
+    }
 </script>
 
 </body>
