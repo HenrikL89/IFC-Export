@@ -1,16 +1,15 @@
 {
   "manifestVersion": 1,
-  "id": "ifc-batch-exporter",
-  "name": "IFC Batch Exporter",
+  "id": "min-mmi-eksport-verktøy",
+  "name": "MMI og IFC Eksport",
   "version": "1.0.0",
-  "description": "Eksporterer alle IFC-filer i visningen til en lokal mappe.",
   "publisher": "Ditt Navn",
   "entryPoints": [
     {
       "type": "viewer-side-panel",
-      "id": "ifc-export-panel",
-      "name": "IFC Eksport",
-      "url": "https://din-url.com/index.html",
+      "id": "mmi-panel",
+      "name": "MMI/Eksport",
+      "url": "index.html",
       "icon": "https://img.icons8.com/color/48/000000/download.png"
     }
   ],
