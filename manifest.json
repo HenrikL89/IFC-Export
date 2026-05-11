@@ -1,16 +1,16 @@
 {
   "manifestVersion": 1,
-  "id": "IFC-eksport-verktøy",
-  "name": "IFC Eksport",
+  "id": "ifc-exporter-henrikl89",
+  "name": "IFC Batch Exporter",
   "version": "1.0.0",
-  "publisher": "Henrik Lien",
+  "publisher": "HenrikL89",
   "entryPoints": [
     {
       "type": "viewer-side-panel",
-      "id": "mmi-panel",
-      "name": "IFC-Eksport",
+      "id": "ifc-export-panel",
+      "name": "IFC Eksport",
       "url": "https://henrikl89.github.io/IFC-Export/index.html",
-      "icon": "https://static.vecteezy.com/system/resources/previews/020/327/866/non_2x/mmi-letter-logo-design-on-white-background-mmi-creative-circle-letter-logo-concept-mmi-letter-design-vector.jpg"
+      "icon": "https://img.icons8.com/color/48/000000/download.png"
     }
   ],
   "permissions": [
