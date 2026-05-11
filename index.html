@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>IFC Batch Export</title>
+    <script src="https://app.connect.trimble.com/tc/api/2.0/api.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; line-height: 1.5; }
+        .status-box { background: #eee; padding: 10px; border-radius: 4px; margin-bottom: 10px; font-size: 13px; }
+        button { 
+            background: #00b0f0; color: white; border: none; padding: 12px; 
+            border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; 
+        }
+        button:disabled { background: #ccc; }
+        .log { font-size: 12px; color: #555; max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 5px; margin-top: 10px; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+
+    <h3>IFC Eksport</h3>
+    <p>Eksporter alle synlige IFC-filer til en mappe på din PC.</p>
+
+    <div class="status-box" id="statusText">Klar til å starte.</div>
+    
+    <button id="exportBtn">Velg mappe & start eksport</button>
+
+    <div class="log" id="logBox"></div>
+
+    <script>
+        const tcSpace = TrimbleConnect.init();
+        const exportBtn = document.getElementById('exportBtn');
+        const logBox = document.getElementById('logBox');
+        const statusText = document.getElementById('statusText');
+
+        function log(msg, type = '') {
+            const div = document.createElement('div');
+            div.className = type;
+            div.innerText = msg;
+            logBox.appendChild(div);
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        exportBtn.addEventListener('click', async () => {
+            try {
+                // 1. Sjekk hvilke modeller som er i viewet
+                log("Henter modeller fra visning...");
+                const models = await tcSpace.viewer.getModels();
+                const ifcModels = models.filter(m => m.name.toLowerCase().endsWith('.ifc'));
+
+                if (ifcModels.length === 0) {
+                    log("Ingen IFC-filer funnet i visningen.", "error");
+                    return;
+                }
+
+                log(`Fant ${ifcModels.length} IFC-filer.`);
+
+                // 2. Be brukeren velge en mappe på PC-en
+                if (!window.showDirectoryPicker) {
+                    alert("Din nettleser støtter ikke direkte lagring til mappe. Vennligst bruk Chrome eller Edge.");
+                    return;
+                }
+                const directoryHandle = await window.showDirectoryPicker();
+                
+                exportBtn.disabled = true;
+                statusText.innerText = "Eksporterer...";
+
+                // 3. Loop gjennom modellene og last ned
+                for (const model of ifcModels) {
+                    log(`Henter: ${model.name}...`);
+                    
+                    try {
+                        // Hent nedlastings-URL fra Trimble Connect
+                        const fileData = await tcSpace.project.getFile(model.id);
+                        const response = await fetch(fileData.downloadUrl);
+                        const blob = await response.blob();
+
+                        // Lag filen i den valgte mappen
+                        const fileHandle = await directoryHandle.getFileHandle(model.name, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        await writable.write(blob);
+                        await writable.close();
+
+                        log(`✅ Lagret: ${model.name}`, "success");
+                    } catch (err) {
+                        log(`❌ Kunne ikke laste ned ${model.name}: ${err.message}`, "error");
+                    }
+                }
+
+                statusText.innerText = "Ferdig!";
+                log("Eksport fullført!");
+
+            } catch (error) {
+                log("Feil: " + error.message, "error");
+                console.error(error);
+            } finally {
+                exportBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
