@@ -4,39 +4,36 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IFC Batch Exporter</title>
-    
-    <!-- Samme API som i Dashboard-eksempelet ditt -->
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
-    
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f9fafb; padding: 15px; color: #1f2937; }
         .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h1 { font-size: 20px; color: #111827; margin-top: 0; }
+        h1 { font-size: 20px; color: #0078d4; margin-top: 0; }
         p { color: #6b7280; font-size: 13px; }
-        
         .btn { 
-            background-color: #3b82f6; color: white; border: none; border-radius: 5px; 
-            padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer; 
+            background-color: #0078d4; color: white; border: none; border-radius: 5px; 
+            padding: 12px 20px; font-size: 14px; font-weight: 600; cursor: pointer; 
             width: 100%; transition: 0.2s;
         }
-        .btn:hover { background-color: #2563eb; }
+        .btn:hover { background-color: #005a9e; }
         .btn:disabled { background-color: #d1d5db; cursor: not-allowed; }
-
         #log { 
             margin-top: 20px; background: #111827; color: #10b981; 
             padding: 10px; border-radius: 5px; font-family: monospace; 
-            font-size: 12px; height: 150px; overflow-y: auto; 
+            font-size: 12px; height: 180px; overflow-y: auto; 
         }
         .status-msg { margin-top: 10px; font-weight: 600; font-size: 13px; }
+        .warning { color: #f59e0b; font-size: 11px; margin-top: 5px; }
     </style>
 </head>
 <body>
 
     <div class="container">
         <h1>IFC Batch Exporter</h1>
-        <p>Laster ned alle synlige IFC-modeller til din maskin.</p>
+        <p>Laster ned alle synlige IFC-modeller til din "Nedlastinger"-mappe.</p>
 
-        <button id="exportBtn" class="btn">Velg mappe & start eksport</button>
+        <button id="exportBtn" class="btn">Last ned alle IFC-filer</button>
+        <p class="warning">Merk: Nettleseren din kan spørre om tillatelse til å laste ned flere filer samtidig. Svar "Tillat".</p>
         
         <div id="status" class="status-msg">Venter på tilkobling...</div>
         <div id="log">> Initialiserer...</div>
@@ -45,9 +42,7 @@
     <script>
         let API = null;
 
-        // 1. Koble til API på nøyaktig samme måte som Dashboard-eksempelet
         TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
-            // Håndterer eventer hvis nødvendig
         }).then((api) => {
             API = api;
             document.getElementById('log').innerText = "> Koblet til Trimble Connect.";
@@ -60,11 +55,21 @@
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
+        // Funksjon for å laste ned en fil via nettleseren
+        function triggerDownload(url, filename) {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => document.body.removeChild(a), 1000);
+        }
+
         document.getElementById('exportBtn').addEventListener('click', async () => {
             if (!API) return;
 
             try {
-                // Sjekk modeller
                 const models = await API.viewer.getModels();
                 const ifcModels = models.filter(m => m.name.toLowerCase().endsWith('.ifc'));
 
@@ -73,38 +78,30 @@
                     return;
                 }
 
-                // Sjekk nettleser-støtte
-                if (!window.showDirectoryPicker) {
-                    alert("Bruk Chrome eller Edge for å eksportere til mappe.");
-                    return;
-                }
-
-                const dirHandle = await window.showDirectoryPicker();
                 const btn = document.getElementById('exportBtn');
                 btn.disabled = true;
-
-                log(`Starter eksport av ${ifcModels.length} filer...`);
+                log(`Starter nedlasting av ${ifcModels.length} filer...`);
 
                 for (const model of ifcModels) {
-                    log(`Henter ${model.name}...`);
+                    log(`Henter nedlastingslenke for ${model.name}...`);
                     
                     try {
                         const fileData = await API.project.getFile(model.id);
-                        const response = await fetch(fileData.downloadUrl);
-                        const blob = await response.blob();
-
-                        const fileHandle = await dirHandle.getFileHandle(model.name, { create: true });
-                        const writable = await fileHandle.createWritable();
-                        await writable.write(blob);
-                        await writable.close();
-                        log(`OK: ${model.name}`);
+                        
+                        // Bruker standard nettlesernedlasting i stedet for showDirectoryPicker
+                        triggerDownload(fileData.downloadUrl, model.name);
+                        
+                        log(`Lagt i kø: ${model.name}`);
+                        
+                        // Vi legger inn en liten pause mellom hver fil for at nettleseren skal rekke å starte dem
+                        await new Promise(resolve => setTimeout(resolve, 800));
                     } catch (e) {
                         log(`FEIL med ${model.name}: ${e.message}`);
                     }
                 }
 
-                document.getElementById('status').innerText = "Eksport ferdig!";
-                log("Batch eksport fullført.");
+                document.getElementById('status').innerText = "Nedlasting ferdig!";
+                log("Alle filer er sendt til nettleseren.");
 
             } catch (err) {
                 log("Kritisk feil: " + err.message);
