@@ -1,14 +1,14 @@
 {
   "manifestVersion": 1,
-  "id": "ifc-export-henrik-unique-99",
+  "id": "ifc-batch-export-final-v1",
   "name": "IFC Batch Exporter",
   "version": "1.0.0",
   "publisher": "Henrik",
   "entryPoints": [
     {
       "type": "viewer-side-panel",
-      "id": "ifc-side-panel",
-      "name": "IFC Export",
+      "id": "ifc-export-sidepanel",
+      "name": "IFC Eksport",
       "url": "https://henrikl89.github.io/IFC-Export/index.html",
       "icon": "https://img.icons8.com/color/48/download.png"
     }
