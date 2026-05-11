@@ -1,15 +1,15 @@
 {
   "manifestVersion": 1,
-  "id": "min-mmi-eksport-verktøy",
-  "name": "MMI og IFC Eksport",
+  "id": "IFC-eksport-verktøy",
+  "name": "IFC Eksport",
   "version": "1.0.0",
-  "publisher": "Ditt Navn",
+  "publisher": "Henrik Lien",
   "entryPoints": [
     {
       "type": "viewer-side-panel",
       "id": "mmi-panel",
-      "name": "MMI/Eksport",
-      "url": "https://ditt-brukernavn.github.io/ditt-prosjektnavn/index.html",
+      "name": "IFC-Eksport",
+      "url": "https://henrikl89.github.io/IFC-Export/index.html",
       "icon": "https://static.vecteezy.com/system/resources/previews/020/327/866/non_2x/mmi-letter-logo-design-on-white-background-mmi-creative-circle-letter-logo-concept-mmi-letter-design-vector.jpg"
     }
   ],
