@@ -3,33 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IFC Exporter v5</title>
+    <title>IFC Exporter v6</title>
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 15px; }
-        .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #ef4444; }
-        .version-tag { background: #ef4444; color: white; padding: 5px 10px; border-radius: 4px; font-weight: bold; display: inline-block; margin-bottom: 10px; }
-        h1 { font-size: 18px; color: #111827; margin: 0 0 10px 0; }
-        .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 12px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 10px; }
-        .btn:disabled { background-color: #d1d5db; }
-        #log { margin-top: 15px; background: #111827; color: #10b981; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 11px; height: 300px; overflow-y: auto; white-space: pre-wrap; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 10px; }
+        .container { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #000; }
+        .version-tag { background: #000; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 10px; display: inline-block; margin-bottom: 10px; }
+        h1 { font-size: 16px; margin: 0 0 10px 0; }
+        .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 10px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 8px; }
+        .btn:disabled { background-color: #ccc; }
+        #log { background: #111; color: #10b981; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 10px; height: 350px; overflow-y: auto; white-space: pre-wrap; border: 1px solid #333; }
+        .err { color: #ff5f56; font-weight: bold; }
+        .dbg { color: #f59e0b; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="version-tag">VERSJON 5.0 (CACHE-SJEKK)</div>
+        <div class="version-tag">VERSJON 6.0 (DEEP DEBUG)</div>
         <h1>IFC Exporter</h1>
-        <p style="font-size: 11px; color: #666;">Hvis du ikke ser den røde boksen over, må du trykke CTRL+F5.</p>
-        
         <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn aktive modeller</button>
         <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
         <div id="log">> Venter på API...</div>
     </div>
 
     <script>
-        let API = null;
-        let accessToken = null;
-        let activeIFCModels = [];
+        let API = null, accessToken = null, activeIFCModels = [];
 
         async function init() {
             try {
@@ -39,68 +37,74 @@
                         log("Token mottatt.");
                     }
                 });
-                
                 await API.extension.requestPermission("accesstoken");
-                log("Tilkoblet Trimble Connect.");
-            } catch (err) {
-                log("Feil ved oppstart: " + err.message);
-            }
+                log("Tilkoblet.");
+            } catch (err) { log("Start-feil: " + err.message, "err"); }
         }
 
-        function log(msg, isError = false) {
+        function log(msg, className = "") {
             const logDiv = document.getElementById('log');
-            logDiv.innerHTML += `\n<span style="color: ${isError ? '#ff5f56' : '#10b981'}">> ${msg}</span>`;
+            logDiv.innerHTML += `\n<span class="${className}">> ${msg}</span>`;
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
         document.getElementById('scanBtn').addEventListener('click', async () => {
-            if (!API) return;
             try {
                 const models = await API.viewer.getModels();
                 activeIFCModels = models.filter(m => m.name.toLowerCase().endsWith('.ifc') && (m.state === 'loaded' || m.loaded === true));
                 log(`Fant ${activeIFCModels.length} aktive modeller.`);
                 if (activeIFCModels.length > 0) document.getElementById('exportBtn').disabled = false;
-            } catch (err) { log("Skanning feilet.", true); }
+            } catch (err) { log("Skann feilet.", "err"); }
         });
 
         document.getElementById('exportBtn').addEventListener('click', async () => {
-            if (!API || !accessToken) return;
             const btn = document.getElementById('exportBtn');
             btn.disabled = true;
 
-            // Loggen din viser at du er i Europa (eu). Vi prøver Europa-serveren først.
-            const regions = ["https://app21.connect.trimble.com", "https://app.connect.trimble.com"];
-
             for (const model of activeIFCModels) {
+                log(`\n--- BEHANDLER: ${model.name} ---`, "dbg");
+                log(`ID som brukes: ${model.id}`, "dbg");
+                
                 let success = false;
-                log(`Henter ${model.name}...`);
+                const regions = ["https://app21.connect.trimble.com", "https://app.connect.trimble.com"];
 
                 for (const base of regions) {
+                    const url = `${base}/tc/api/2.0/files/${model.id}`;
+                    log(`Prøver region: ${base}...`, "dbg");
+
                     try {
-                        // VIKTIG: API.extension.request brukes for å gå rundt CORS-sperren
                         const response = await API.extension.request({
-                            url: `${base}/tc/api/2.0/files/${model.id}`,
+                            url: url,
                             method: "GET",
                             headers: { "Authorization": `Bearer ${accessToken}` }
                         });
 
-                        if (response && response.downloadUrl) {
-                            const a = document.createElement('a');
-                            a.href = response.downloadUrl;
-                            a.download = model.name;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            log(`Suksess via ${base.includes('app21') ? 'EU' : 'US'}`);
-                            success = true;
-                            break;
+                        // DEBUG: Logg hva vi faktisk får tilbake
+                        if (response) {
+                            if (response.downloadUrl) {
+                                log(`SUKSESS! Fant URL.`);
+                                const a = document.createElement('a');
+                                a.href = response.downloadUrl;
+                                a.download = model.name;
+                                a.click();
+                                success = true;
+                                break;
+                            } else {
+                                log(`Svar mottatt, men ingen downloadUrl. Status: ${response.status || 'ukjent'}`, "dbg");
+                                if (response.errors) log(`Feil fra server: ${JSON.stringify(response.errors)}`, "err");
+                            }
+                        } else {
+                            log(`Tomt svar fra ${base}`, "err");
                         }
-                    } catch (e) { }
+                    } catch (e) {
+                        log(`Kall mot ${base} krasjet: ${e.message}`, "err");
+                    }
                 }
-                if (!success) log(`Feil: Kunne ikke hente ${model.name}`, true);
+
+                if (!success) log(`KUNNE IKKE HENTE ${model.name}. Sjekk feilmeldingene over.`, "err");
                 await new Promise(r => setTimeout(r, 1000));
             }
-            log("Ferdig.");
+            log("\n--- Ferdig ---", "dbg");
             btn.disabled = false;
         });
 
