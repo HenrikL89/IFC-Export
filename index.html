@@ -3,45 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IFC Exporter v7</title>
+    <title>IFC Exporter v9</title>
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 10px; }
-        .container { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #3b82f6; }
-        .version-tag { background: #3b82f6; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 10px; display: inline-block; margin-bottom: 10px; }
+        .container { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 8px solid #fbbf24; }
+        .cache-checker { background: #fbbf24; color: #000; padding: 5px; text-align: center; font-weight: bold; font-size: 10px; border-radius: 4px; margin-bottom: 10px; }
         h1 { font-size: 16px; margin: 0 0 10px 0; color: #111827; }
         .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 12px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 8px; }
         .btn:disabled { background-color: #ccc; }
-        #log { background: #111; color: #10b981; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 10px; height: 350px; overflow-y: auto; white-space: pre-wrap; }
-        .err { color: #ff5f56; }
+        #log { background: #111; color: #10b981; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 10px; height: 350px; overflow-y: auto; white-space: pre-wrap; }
+        .err { color: #ff5f56; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="version-tag">VERSJON 7.0 (OPEN21 REST)</div>
-        <h1>IFC Exporter</h1>
+        <div class="cache-checker">VERSJON 9.0 (GUL MODUS - INGEN FETCH)</div>
+        <h1>IFC Batch Exporter</h1>
         <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn aktive modeller</button>
         <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
-        <div id="log">> Venter på API...</div>
+        <div id="log">> Initialiserer API...</div>
     </div>
 
     <script>
         let API = null;
-        let accessToken = null;
         let activeIFCModels = [];
 
-        // Initialiserer nøyaktig slik som i ditt fungerende Dashboard
         async function init() {
             try {
                 API = await TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
-                    if (event === "extension.accessToken" && args.data) {
-                        accessToken = typeof args.data === "string" ? args.data : args.data.accessToken;
-                        log("Token mottatt.");
-                    }
+                    if (event === "extension.accessToken") log("Sikkerhetsnøkkel oppdatert.");
                 });
-                await API.extension.requestPermission("accesstoken");
-                log("Tilkoblet.");
-            } catch (err) { log("Start-feil: " + err.message, "err"); }
+                log("Tilkoblet Trimble Connect.");
+                document.getElementById('log').innerText = "> API Klar. Klikk 'Finn modeller'.";
+            } catch (err) { log("Oppstart-feil: " + err.message, "err"); }
         }
 
         function log(msg, className = "") {
@@ -51,58 +46,57 @@
         }
 
         document.getElementById('scanBtn').addEventListener('click', async () => {
+            if (!API) return;
             try {
                 const models = await API.viewer.getModels();
-                // Vi finner alle som er 'loaded'
                 activeIFCModels = models.filter(m => m.name.toLowerCase().endsWith('.ifc') && (m.state === 'loaded' || m.loaded === true));
-                log(`Fant ${activeIFCModels.length} aktive modeller.`);
-                if (activeIFCModels.length > 0) document.getElementById('exportBtn').disabled = false;
-            } catch (err) { log("Skann feilet.", "err"); }
+                log(`Fant ${activeIFCModels.length} aktive IFC-modeller.`);
+                if (activeIFCModels.length > 0) {
+                    activeIFCModels.forEach(m => log(`- Klar: ${m.name}`));
+                    document.getElementById('exportBtn').disabled = false;
+                }
+            } catch (err) { log("Skanning feilet: " + err.message, "err"); }
         });
 
         document.getElementById('exportBtn').addEventListener('click', async () => {
-            if (!accessToken) { log("Mangler token!", "err"); return; }
-            
             const btn = document.getElementById('exportBtn');
             btn.disabled = true;
 
             for (const model of activeIFCModels) {
-                log(`Henter ${model.name}...`);
-                
-                // Vi bruker OPEN21-serveren. Denne tillater forespørsler fra GitHub (CORS OK)
-                // og fungerer med samme token som Dashboardet ditt.
-                const url = `https://open21.connect.trimble.com/tc/api/2.0/files/${model.id}`;
-
+                log(`Behandler ${model.name}...`);
                 try {
-                    const resp = await fetch(url, {
-                        method: "GET",
-                        headers: {
-                            "Authorization": `Bearer ${accessToken}`,
-                            "Accept": "application/json"
-                        }
-                    });
+                    let downloadUrl = null;
 
-                    if (resp.ok) {
-                        const fileData = await resp.json();
-                        if (fileData.downloadUrl) {
-                            const a = document.createElement('a');
-                            a.href = fileData.downloadUrl;
-                            a.download = model.name;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            log(`SUKSESS: ${model.name}`);
-                        } else {
-                            log(`Feil: Ingen downloadUrl for ${model.name}`, "err");
-                        }
-                    } else {
-                        log(`Serverfeil ${resp.status} for ${model.name}`, "err");
+                    // Vi prøver alle mulige funksjoner i biblioteket for å finne filen:
+                    // Dette omgår CORS fordi vi ikke bruker fetch()
+                    if (API.project && typeof API.project.getFiles === 'function') {
+                        const res = await API.project.getFiles([model.id]);
+                        if (res && res[0]) downloadUrl = res[0].downloadUrl;
+                    } 
+                    else if (API.project && typeof API.project.getFile === 'function') {
+                        const res = await API.project.getFile(model.id);
+                        if (res) downloadUrl = res.downloadUrl;
                     }
-                } catch (e) {
-                    log(`Kritisk feil ved henting: ${e.message}`, "err");
+                    else if (typeof API.getFile === 'function') {
+                        const res = await API.getFile(model.id);
+                        if (res) downloadUrl = res.downloadUrl;
+                    }
+
+                    if (downloadUrl) {
+                        const a = document.createElement('a');
+                        a.href = downloadUrl;
+                        a.download = model.name;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        log(`SUKSESS: Nedlasting startet for ${model.name}`);
+                    } else {
+                        log(`KUNNE IKKE FINNE nedlastingslenke for ${model.name}.`, "err");
+                        log("Prøv å sjekke om utvidelsen har 'file.read' rettigheter.", "err");
+                    }
+                } catch (err) {
+                    log(`FEIL med ${model.name}: ${err.message}`, "err");
                 }
-                
-                // Vent litt mellom hver fil
                 await new Promise(r => setTimeout(r, 1000));
             }
             log("Ferdig.");
