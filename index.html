@@ -19,21 +19,22 @@
         #log { 
             margin-top: 15px; background: #111827; color: #10b981; 
             padding: 10px; border-radius: 4px; font-family: monospace; 
-            font-size: 11px; height: 250px; overflow-y: auto; 
+            font-size: 11px; height: 300px; overflow-y: auto; 
         }
-        .count-info { font-size: 12px; background: #f3f4f6; padding: 8px; border-radius: 4px; margin-bottom: 10px; }
+        .debug-info { font-size: 10px; color: #9ca3af; margin-top: 10px; border-top: 1px solid #e5e7eb; padding-top: 5px; }
     </style>
 </head>
 <body>
 
     <div class="container">
         <h1>IFC Viewer Exporter</h1>
-        <div id="summary" class="count-info">Venter på skanning...</div>
+        <div id="summary" style="font-size: 13px; margin-bottom: 10px; font-weight: bold;">Venter på skanning...</div>
 
         <button id="scanBtn" class="btn" style="background-color: #4b5563;">1. Finn aktive modeller i 3D</button>
         <button id="exportBtn" class="btn" disabled>2. Last ned aktive filer</button>
         
-        <div id="log">> Initialiserer...</div>
+        <div id="log">> Tilkoblet og klar.</div>
+        <div class="debug-info" id="debug">Debug: Ingen data enda.</div>
     </div>
 
     <script>
@@ -43,7 +44,7 @@
         TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
         }).then((api) => {
             API = api;
-            log("Tilkoblet Trimble Connect.");
+            log("API lastet inn.");
         });
 
         function log(msg) {
@@ -64,55 +65,63 @@
         document.getElementById('scanBtn').addEventListener('click', async () => {
             if (!API) return;
             try {
-                log("Skanner alle filer i prosjektet...");
+                log("Henter alle modeller...");
                 const allModels = await API.viewer.getModels();
                 
-                log(`Totalt antall filer i prosjekttreet: ${allModels.length}`);
+                log(`Sjekker ${allModels.length} filer for aktiv status...`);
 
-                // VIKTIG FILTRERING:
-                // Vi sjekker om filen slutter på .ifc OG om den er lastet i vieweren (m.loaded === true)
+                // DEBUG: Skriv ut egenskapene til den første IFC-modellen den finner i loggen
+                const firstIFC = allModels.find(m => m.name.toLowerCase().endsWith('.ifc'));
+                if (firstIFC) {
+                    document.getElementById('debug').innerText = "Debug info (første IFC): " + JSON.stringify(firstIFC);
+                    console.log("Model properties:", firstIFC);
+                }
+
+                // SMART FILTRERING:
+                // Vi sjekker alle vanlige flagg for om en modell er "skrudd på"
                 activeIFCModels = allModels.filter(m => {
                     const isIfc = m.name.toLowerCase().endsWith('.ifc');
-                    const isLoaded = (m.loaded === true); 
-                    return isIfc && isLoaded;
+                    
+                    // Sjekker om noen av disse er sanne (ulike API-versjoner bruker ulike navn)
+                    const isAktiv = (m.loaded === true || m.visible === true || m.enabled === true || m.state === 'loaded');
+                    
+                    return isIfc && isAktiv;
                 });
 
                 if (activeIFCModels.length === 0) {
-                    log("Fant ingen AKTIVE IFC-modeller. Sjekk at modellen er skrudd på i 3D-vinduet.");
-                    document.getElementById('summary').innerText = "Ingen aktive IFC-filer funnet.";
+                    log("Fant ingen aktive IFC-modeller.");
+                    log("TIPS: Hvis modellen ER på, sjekk Debug-linjen nederst for å se hvilken status den har.");
+                    document.getElementById('summary').innerText = "0 aktive IFC-filer funnet.";
                     document.getElementById('exportBtn').disabled = true;
                 } else {
-                    log(`SUKSESS: Fant ${activeIFCModels.length} aktive IFC-filer.`);
-                    activeIFCModels.forEach(m => log(` - KLAR: ${m.name}`));
+                    log(`FUNNET: ${activeIFCModels.length} aktive modeller.`);
+                    activeIFCModels.forEach(m => log(` - ${m.name}`));
                     
-                    document.getElementById('summary').innerHTML = `<strong>Klar til eksport: ${activeIFCModels.length} filer</strong>`;
+                    document.getElementById('summary').innerText = `Klar: ${activeIFCModels.length} filer funnet.`;
                     document.getElementById('exportBtn').disabled = false;
                 }
             } catch (err) {
-                log("Feil ved skanning: " + err.message);
+                log("Feil: " + err.message);
             }
         });
 
         document.getElementById('exportBtn').addEventListener('click', async () => {
             const btn = document.getElementById('exportBtn');
             btn.disabled = true;
+            log("Starter nedlasting...");
 
-            log("--- Starter nedlasting ---");
             for (let i = 0; i < activeIFCModels.length; i++) {
                 const model = activeIFCModels[i];
-                log(`Laster ned (${i+1}/${activeIFCModels.length}): ${model.name}`);
-                
                 try {
                     const fileData = await API.project.getFile(model.id);
                     downloadFile(fileData.downloadUrl, model.name);
-                    
-                    // Litt lengre pause mellom hver fil for å unngå at nettleseren blokkerer ved 2000+ filer i minnet
-                    await new Promise(r => setTimeout(r, 1200));
+                    log(`Nedlasting startet: ${model.name}`);
+                    await new Promise(r => setTimeout(r, 1000));
                 } catch (e) {
                     log(`Kunne ikke laste ned ${model.name}`);
                 }
             }
-            log("--- Ferdig! ---");
+            log("Fullført.");
             btn.disabled = false;
         });
     </script>
