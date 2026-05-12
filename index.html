@@ -3,47 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IFC Viewer Exporter</title>
+    <title>IFC Exporter v2</title>
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #f9fafb; padding: 15px; color: #1f2937; }
-        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #0078d4; }
-        h1 { font-size: 18px; color: #0078d4; margin-top: 0; }
-        .btn { 
-            background-color: #0078d4; color: white; border: none; border-radius: 5px; 
-            padding: 12px 20px; font-size: 14px; font-weight: 600; cursor: pointer; 
-            width: 100%; transition: 0.2s; margin-bottom: 10px;
-        }
-        .btn:hover { background-color: #005a9e; }
-        .btn:disabled { background-color: #d1d5db; cursor: not-allowed; }
-        #log { 
-            margin-top: 15px; background: #111827; color: #10b981; 
-            padding: 10px; border-radius: 4px; font-family: monospace; 
-            font-size: 11px; height: 300px; overflow-y: auto; 
-        }
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 15px; }
+        .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #0078d4; }
+        .version { float: right; font-size: 10px; color: #9ca3af; }
+        h1 { font-size: 18px; color: #0078d4; margin: 0 0 10px 0; }
+        .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 12px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 10px; }
+        .btn:disabled { background-color: #d1d5db; }
+        #log { margin-top: 15px; background: #111827; color: #10b981; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 11px; height: 250px; overflow-y: auto; }
     </style>
 </head>
 <body>
-
     <div class="container">
-        <h1>IFC Viewer Exporter</h1>
-        <div id="status" style="font-size: 13px; margin-bottom: 10px; font-weight: bold; color: #4b5563;">Venter på API...</div>
-
-        <button id="scanBtn" class="btn" style="background-color: #4b5563;">1. Finn aktive modeller i 3D</button>
+        <span class="version">v2.0</span>
+        <h1>IFC Exporter</h1>
+        <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn modeller</button>
         <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
-        
-        <div id="log">> Initialiserer...</div>
+        <div id="log">> Venter på tilkobling...</div>
     </div>
 
     <script>
-        let API = null;
-        let accessToken = null;
+        let API = null, accessToken = null, currentProjectId = null;
         let activeIFCModels = [];
         
-        // Liste over mulige Trimble-servere (Europa og USA)
-        const REGIONS = [
+        // KUN de ekte serverne (ingen app.eu her lenger!)
+        const SERVERS = [
             "https://app21.connect.trimble.com/tc/api/2.0",
-            "https://app.eu.connect.trimble.com/tc/api/2.0",
             "https://app.connect.trimble.com/tc/api/2.0"
         ];
 
@@ -52,88 +39,60 @@
                 API = await TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
                     if (event === "extension.accessToken") {
                         accessToken = typeof args.data === "string" ? args.data : args.data.accessToken;
-                        log("Token mottatt.");
-                        document.getElementById('status').innerText = "Klar";
+                        log("Sikkerhetstoken mottatt.");
                     }
                 });
+                const project = await API.project.getCurrentProject();
+                currentProjectId = project.id;
+                log(`Prosjekt: ${project.name}`);
                 await API.extension.requestPermission("accesstoken");
-            } catch (err) {
-                log("Feil: " + err.message, "#ff5f56");
-            }
+            } catch (err) { log("Start-feil: " + err.message); }
         }
 
-        function log(msg, color = "#10b981") {
+        function log(msg, isError = false) {
             const logDiv = document.getElementById('log');
-            logDiv.innerHTML += `<div style="color: ${color}">> ${msg}</div>`;
+            logDiv.innerHTML += `<div style="color: ${isError ? '#ff5f56' : '#10b981'}">> ${msg}</div>`;
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
-        function downloadFile(url, filename) {
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            setTimeout(() => document.body.removeChild(a), 500);
-        }
-
         document.getElementById('scanBtn').addEventListener('click', async () => {
-            if (!API) return;
             try {
-                log("Skanner 3D-visning...");
-                const allModels = await API.viewer.getModels();
-                activeIFCModels = allModels.filter(m => {
-                    const isIfc = m.name.toLowerCase().endsWith('.ifc');
-                    return isIfc && (m.state === 'loaded' || m.loaded === true);
-                });
-
-                if (activeIFCModels.length === 0) {
-                    log("Ingen aktive modeller funnet.", "#ff5f56");
-                } else {
-                    log(`KLAR: ${activeIFCModels.length} modeller.`);
-                    document.getElementById('exportBtn').disabled = false;
-                }
-            } catch (err) {
-                log("Skanning feilet: " + err.message, "#ff5f56");
-            }
+                const models = await API.viewer.getModels();
+                activeIFCModels = models.filter(m => m.name.toLowerCase().endsWith('.ifc') && (m.state === 'loaded' || m.loaded === true));
+                log(`Fant ${activeIFCModels.length} aktive IFC-modeller.`);
+                if (activeIFCModels.length > 0) document.getElementById('exportBtn').disabled = false;
+            } catch (err) { log("Skann feilet: " + err.message); }
         });
 
         document.getElementById('exportBtn').addEventListener('click', async () => {
-            if (!accessToken) return;
-            const btn = document.getElementById('exportBtn');
-            btn.disabled = true;
-
             for (const model of activeIFCModels) {
-                log(`Søker etter region for ${model.name}...`);
-                let found = false;
-
-                // Prøver hver region til vi får treff (ikke 404)
-                for (const baseUrl of REGIONS) {
+                let success = false;
+                log(`Prøver nedlasting: ${model.name}...`);
+                
+                for (const base of SERVERS) {
                     try {
-                        const resp = await fetch(`${baseUrl}/files/${model.id}`, {
-                            method: "GET",
+                        const url = `${base}/projects/${currentProjectId}/files/${model.id}`;
+                        const resp = await fetch(url, {
                             headers: { "Authorization": `Bearer ${accessToken}`, "Accept": "application/json" }
                         });
-
                         if (resp.ok) {
                             const data = await resp.json();
                             if (data.downloadUrl) {
-                                downloadFile(data.downloadUrl, model.name);
-                                log(`SUKSESS: Fant fil i region ${baseUrl.split('//')[1].split('.')[0]}`);
-                                found = true;
-                                break; 
+                                const a = document.createElement('a');
+                                a.href = data.downloadUrl;
+                                a.download = model.name;
+                                a.click();
+                                log(`SUKSESS via ${base.includes('app21') ? 'Europa' : 'USA'}`);
+                                success = true;
+                                break;
                             }
                         }
                     } catch (e) {}
                 }
-
-                if (!found) log(`KUNNE IKKE FINNE ${model.name} på noen servere.`, "#ff5f56");
-                await new Promise(r => setTimeout(r, 800));
+                if (!success) log(`KUNNE IKKE FINNE ${model.name}`, true);
+                await new Promise(r => setTimeout(r, 1000));
             }
-            log("Ferdig.");
-            btn.disabled = false;
         });
-
         init();
     </script>
 </body>
