@@ -18,29 +18,27 @@
         .btn:disabled { background-color: #d1d5db; cursor: not-allowed; }
         #log { 
             margin-top: 15px; background: #111827; color: #10b981; 
-            padding: 10px; border-radius: 5px; font-family: monospace; 
-            font-size: 11px; height: 200px; overflow-y: auto; 
+            padding: 10px; border-radius: 4px; font-family: monospace; 
+            font-size: 11px; height: 250px; overflow-y: auto; 
         }
-        .info { font-size: 12px; color: #6b7280; margin-bottom: 10px; }
-        .count-badge { background: #0078d4; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+        .count-info { font-size: 12px; background: #f3f4f6; padding: 8px; border-radius: 4px; margin-bottom: 10px; }
     </style>
 </head>
 <body>
 
     <div class="container">
         <h1>IFC Viewer Exporter</h1>
-        <p class="info">Laster ned kun IFC-modeller som er <strong>lastet inn i 3D-vinduet</strong>.</p>
+        <div id="summary" class="count-info">Venter på skanning...</div>
 
-        <button id="scanBtn" class="btn" style="background-color: #4b5563;">1. Finn modeller i vieweren</button>
-        <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
+        <button id="scanBtn" class="btn" style="background-color: #4b5563;">1. Finn aktive modeller i 3D</button>
+        <button id="exportBtn" class="btn" disabled>2. Last ned aktive filer</button>
         
-        <div id="status" style="margin-top:10px; font-weight:bold; font-size:13px;">Klar</div>
-        <div id="log">> Velkommen. Klikk "Finn modeller" for å starte.</div>
+        <div id="log">> Initialiserer...</div>
     </div>
 
     <script>
         let API = null;
-        let selectedModels = [];
+        let activeIFCModels = [];
 
         TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
         }).then((api) => {
@@ -63,55 +61,58 @@
             setTimeout(() => document.body.removeChild(a), 500);
         }
 
-        // Steg 1: Finn kun de modellene som er i vieweren
         document.getElementById('scanBtn').addEventListener('click', async () => {
             if (!API) return;
             try {
-                log("Skanner 3D-vinduet...");
+                log("Skanner alle filer i prosjektet...");
                 const allModels = await API.viewer.getModels();
                 
-                // Filtrer ut kun IFC-filer
-                selectedModels = allModels.filter(m => m.name.toLowerCase().endsWith('.ifc'));
+                log(`Totalt antall filer i prosjekttreet: ${allModels.length}`);
 
-                if (selectedModels.length === 0) {
-                    log("Ingen IFC-modeller funnet i 3D-vinduet.");
+                // VIKTIG FILTRERING:
+                // Vi sjekker om filen slutter på .ifc OG om den er lastet i vieweren (m.loaded === true)
+                activeIFCModels = allModels.filter(m => {
+                    const isIfc = m.name.toLowerCase().endsWith('.ifc');
+                    const isLoaded = (m.loaded === true); 
+                    return isIfc && isLoaded;
+                });
+
+                if (activeIFCModels.length === 0) {
+                    log("Fant ingen AKTIVE IFC-modeller. Sjekk at modellen er skrudd på i 3D-vinduet.");
+                    document.getElementById('summary').innerText = "Ingen aktive IFC-filer funnet.";
                     document.getElementById('exportBtn').disabled = true;
                 } else {
-                    log(`Fant ${selectedModels.length} IFC-modeller i vieweren:`);
-                    selectedModels.forEach(m => log(` - ${m.name}`));
+                    log(`SUKSESS: Fant ${activeIFCModels.length} aktive IFC-filer.`);
+                    activeIFCModels.forEach(m => log(` - KLAR: ${m.name}`));
+                    
+                    document.getElementById('summary').innerHTML = `<strong>Klar til eksport: ${activeIFCModels.length} filer</strong>`;
                     document.getElementById('exportBtn').disabled = false;
-                    document.getElementById('status').innerHTML = `Funnet: <span class="count-badge">${selectedModels.length} filer</span>`;
                 }
             } catch (err) {
                 log("Feil ved skanning: " + err.message);
             }
         });
 
-        // Steg 2: Last ned de identifiserte modellene
         document.getElementById('exportBtn').addEventListener('click', async () => {
             const btn = document.getElementById('exportBtn');
             btn.disabled = true;
 
             log("--- Starter nedlasting ---");
-            for (let i = 0; i < selectedModels.length; i++) {
-                const model = selectedModels[i];
-                document.getElementById('status').innerText = `Laster ned (${i+1}/${selectedModels.length})...`;
+            for (let i = 0; i < activeIFCModels.length; i++) {
+                const model = activeIFCModels[i];
+                log(`Laster ned (${i+1}/${activeIFCModels.length}): ${model.name}`);
                 
                 try {
-                    // Vi må bruke model.id eller model.modelId for å hente selve filen fra prosjektet
                     const fileData = await API.project.getFile(model.id);
-                    
                     downloadFile(fileData.downloadUrl, model.name);
-                    log(`Ferdig: ${model.name}`);
                     
-                    // Pause for å unngå nettleser-sperre
-                    await new Promise(r => setTimeout(r, 1000));
+                    // Litt lengre pause mellom hver fil for å unngå at nettleseren blokkerer ved 2000+ filer i minnet
+                    await new Promise(r => setTimeout(r, 1200));
                 } catch (e) {
-                    log(`Kunne ikke hente ${model.name}`);
+                    log(`Kunne ikke laste ned ${model.name}`);
                 }
             }
-            document.getElementById('status').innerText = "Ferdig!";
-            log("Alle valgte filer er sendt til nedlasting.");
+            log("--- Ferdig! ---");
             btn.disabled = false;
         });
     </script>
