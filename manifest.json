@@ -1,6 +1,21 @@
 {
-  "title": "IFC Batch Exporter",
-  "url": "https://henrikl89.github.io/IFC-Export/index.html",
-  "description": "Eksporter alle aktive IFC-modeller til en valgt mappe på din PC.",
-  "icon": "https://img.icons8.com/color/48/download.png"
+  "manifestVersion": 1,
+  "id": "ifc-batch-export-v2025",
+  "name": "IFC Batch Exporter v2",
+  "version": "2.0.0",
+  "publisher": "Henrik",
+  "entryPoints": [
+    {
+      "type": "viewer-side-panel",
+      "id": "ifc-export-sidepanel",
+      "name": "IFC Eksport v2",
+      "url": "https://henrikl89.github.io/IFC-Export/index.html",
+      "icon": "https://img.icons8.com/color/48/download.png"
+    }
+  ],
+  "permissions": [
+    "viewer.read",
+    "project.read",
+    "file.read"
+  ]
 }
