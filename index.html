@@ -2,29 +2,35 @@
 <html lang="no">
 <head>
     <meta charset="UTF-8">
-    <title>IFC Exporter v16</title>
+    <title>IFC Exporter v17</title>
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 15px; }
-        .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 10px solid #06b6d4; }
-        .version-badge { background: #06b6d4; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-align: center; display: block; margin-bottom: 10px; }
+        .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 10px solid #f97316; }
+        .version-badge { background: #f97316; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-align: center; display: block; margin-bottom: 10px; }
         h1 { font-size: 18px; color: #111827; margin: 0 0 10px 0; }
         .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 12px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 10px; }
         .btn:disabled { background-color: #d1d5db; cursor: not-allowed; }
-        #log { background: #111827; color: #10b981; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; height: 250px; overflow-y: auto; white-space: pre-wrap; }
-        .manual-btn { display: block; background: #10b981; color: white; text-decoration: none; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; margin-top: 5px; }
+        #log { background: #111827; color: #10b981; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; height: 200px; overflow-y: auto; white-space: pre-wrap; margin-bottom: 10px; }
+        .manual-btn { display: block; background: #10b981; color: white; text-decoration: none; padding: 12px; border-radius: 5px; text-align: center; font-weight: bold; margin-top: 8px; font-size: 13px; }
+        .manual-btn:hover { background: #059669; }
+        .info-text { font-size: 11px; color: #6b7280; margin-top: 10px; background: #fffbeb; padding: 8px; border: 1px solid #fef3c7; border-radius: 4px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="version-badge">VERSION 16.0 (TURKIS MODUS)</div>
+        <div class="version-badge">VERSION 17.0 (ORANSJE MODUS)</div>
         <h1>IFC Exporter</h1>
         
         <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn aktive modeller</button>
         <button id="exportBtn" class="btn" disabled>2. Generer nedlastingslenker</button>
         
-        <div id="log">> Initialiserer...</div>
+        <div id="log">> Tilkoblet.</div>
         <div id="fileList"></div>
+
+        <div class="info-text">
+            <strong>Merk:</strong> Lenkene åpnes i en ny fane for å omgå sikkerhetssperren i Trimble. Nedlastingen starter automatisk der.
+        </div>
     </div>
 
     <script>
@@ -32,27 +38,15 @@
         let accessToken = null;
         let activeIFCModels = [];
 
-        // Initialiserer API og lytter etter token (Slik som i dashboardet ditt)
         async function init() {
             try {
                 API = await TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
                     if (event === "extension.accessToken" && args.data) {
                         accessToken = typeof args.data === "string" ? args.data : args.data.accessToken;
-                        log("Token mottatt via event.");
                     }
                 });
-
-                log("Tilkoblet. Ber om sikkerhetstoken...");
-                
-                // Vi prøver å hente tokenet direkte fra svaret (Promise)
-                const result = await API.extension.requestPermission("accesstoken");
-                if (result) {
-                    accessToken = result.accessToken || result;
-                    if (typeof accessToken === 'string') log("Token mottatt via forespørsel.");
-                }
-            } catch (err) {
-                log("Feil ved oppstart: " + err.message);
-            }
+                await API.extension.requestPermission("accesstoken");
+            } catch (err) { log("Feil: " + err.message); }
         }
 
         function log(msg) {
@@ -65,51 +59,40 @@
             if (!API) return;
             try {
                 const models = await API.viewer.getModels();
-                activeIFCModels = models.filter(m => 
-                    m.name.toLowerCase().endsWith('.ifc') && 
-                    (m.state === 'loaded' || m.loaded === true)
-                );
-                
-                log(`Fant ${activeIFCModels.length} aktive modeller.`);
-                if (activeIFCModels.length > 0) {
-                    document.getElementById('exportBtn').disabled = false;
-                }
+                activeIFCModels = models.filter(m => m.name.toLowerCase().endsWith('.ifc') && (m.state === 'loaded' || m.loaded === true));
+                log(`Fant ${activeIFCModels.length} modeller.`);
+                document.getElementById('exportBtn').disabled = false;
             } catch (err) { log("Skanning feilet."); }
         });
 
         document.getElementById('exportBtn').addEventListener('click', async () => {
-            // Hvis vi fortsatt mangler token, prøver vi en siste gang å be om det
-            if (!accessToken && API) {
-                log("Mangler token, prøver å hente på nytt...");
+            if (!accessToken) {
                 const result = await API.extension.requestPermission("accesstoken");
                 accessToken = result.accessToken || result;
             }
 
-            if (!accessToken) {
-                log("FEIL: Kunne ikke hente sikkerhetstoken fra Trimble.");
-                return;
-            }
-
-            log("Genererer lenker for Europeisk server...");
+            log("Genererer lenker...");
             const fileList = document.getElementById('fileList');
             fileList.innerHTML = ""; 
 
             activeIFCModels.forEach((model) => {
-                // Vi bruker den europeiske server-adressen for direkte nedlasting
-                const directUrl = `https://app21.connect.trimble.com/tc/api/2.0/files/${model.id}/download?access_token=${accessToken}`;
+                // Vi bruker model.modelId hvis den finnes, ellers model.id
+                // model.id i 3D-vinduet er ofte en sesjons-ID, mens modelId er den ekte fil-IDen
+                const realId = model.modelId || model.id;
+                
+                const directUrl = `https://app21.connect.trimble.com/tc/api/2.0/files/${realId}/download?access_token=${accessToken}`;
 
                 const dl = document.createElement('a');
                 dl.className = "manual-btn";
                 dl.href = directUrl;
-                dl.innerText = "Last ned " + model.name;
-                // 'download'-attributtet tvinger nettleseren til å lagre filen
-                dl.setAttribute("download", model.name); 
-                fileList.appendChild(dl);
+                // VIKTIG: target="_blank" tvinger lenken til å åpne i ny fane og omgår X-Frame-Options
+                dl.target = "_blank";
+                dl.rel = "noopener noreferrer";
+                dl.innerText = "LAST NED: " + model.name;
                 
+                fileList.appendChild(dl);
                 log(`Klar: ${model.name}`);
             });
-
-            log("Klikk på de grønne knappene over for å lagre.");
         });
 
         init();
