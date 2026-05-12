@@ -2,48 +2,54 @@
 <html lang="no">
 <head>
     <meta charset="UTF-8">
-    <title>IFC Exporter v13</title>
+    <title>IFC Exporter v14</title>
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 15px; color: #1f2937; }
-        .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 10px solid #111; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 15px; }
+        .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 10px solid #2563eb; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         h1 { font-size: 18px; color: #111827; margin: 0; }
-        .version-badge { background: #111; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; }
+        .version-badge { background: #2563eb; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; }
         .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 12px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 10px; }
         .btn:disabled { background-color: #d1d5db; cursor: not-allowed; }
-        #log { background: #111827; color: #10b981; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; height: 250px; overflow-y: auto; white-space: pre-wrap; }
+        #log { background: #111827; color: #10b981; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; height: 300px; overflow-y: auto; white-space: pre-wrap; }
+        .err { color: #ff5f56; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>IFC Exporter</h1>
-            <span class="version-badge">VERSION 13.0</span>
+            <span class="version-badge">VERSION 14.0</span>
         </div>
         
         <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn aktive modeller</button>
         <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
         
-        <div id="log">> Initialiserer API...</div>
+        <div id="log">> Kobler til API...</div>
     </div>
 
     <script>
         let API = null;
+        let accessToken = null;
         let activeIFCModels = [];
 
-        // Kobler til Trimble Connect
+        // Kobler til Trimble Connect (samme bibliotek som Topics Dashboard)
         TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
+            if (event === "extension.accessToken") {
+                accessToken = typeof args.data === "string" ? args.data : args.data.accessToken;
+                log("Sikkerhetstoken (Access Token) er mottatt.");
+            }
         }).then((api) => {
             API = api;
+            // Ber om token med en gang
+            API.extension.requestPermission("accesstoken");
             log("Tilkoblet Trimble Connect API.");
-        }).catch(err => {
-            log("FEIL ved tilkobling: " + err.message);
         });
 
-        function log(msg) {
+        function log(msg, isError = false) {
             const logDiv = document.getElementById('log');
-            logDiv.innerText += `\n> ${msg}`;
+            logDiv.innerHTML += `\n<span class="${isError ? 'err' : ''}">> ${msg}</span>`;
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
@@ -53,52 +59,66 @@
                 const models = await API.viewer.getModels();
                 activeIFCModels = models.filter(m => 
                     m.name.toLowerCase().endsWith('.ifc') && 
-                    (m.state === 'loaded' || m.loaded === true || m.visible === true)
+                    (m.state === 'loaded' || m.loaded === true)
                 );
                 
-                log(`Fant ${activeIFCModels.length} aktive IFC-filer.`);
+                log(`Fant ${activeIFCModels.length} aktive IFC-modeller.`);
                 if (activeIFCModels.length > 0) {
                     activeIFCModels.forEach(m => log(`- ${m.name}`));
                     document.getElementById('exportBtn').disabled = false;
                 }
             } catch (err) {
-                log("FEIL ved skanning: " + err.message);
+                log("FEIL ved skanning: " + err.message, true);
             }
         });
 
         document.getElementById('exportBtn').addEventListener('click', async () => {
-            if (!API) return;
+            if (!API || !accessToken) {
+                log("Mangler tilkobling eller token. Prøv igjen om to sekunder.", true);
+                return;
+            }
             const btn = document.getElementById('exportBtn');
             btn.disabled = true;
 
-            log("Forsøker nedlasting via API Proxy...");
+            log("Starter nedlasting via Trimble Proxy...");
 
             for (const model of activeIFCModels) {
                 try {
-                    log(`Henter ${model.name}...`);
-                    let fileResult = null;
+                    log(`Behandler ${model.name}...`);
+                    
+                    // Siden prosjektet ditt er Europeisk, bruker vi app21
+                    const fileUrl = `https://app21.connect.trimble.com/tc/api/2.0/files/${model.id}`;
 
-                    // Bruker APIets interne metoder for å unngå CORS
-                    if (API.project && typeof API.project.getFiles === 'function') {
-                        const results = await API.project.getFiles([model.id]);
-                        fileResult = results[0];
-                    } else if (API.project && typeof API.project.getFile === 'function') {
-                        fileResult = await API.project.getFile(model.id);
+                    // Vi bruker API.request (denne omgår CORS og henter downloadUrl)
+                    // I det nye biblioteket ligger den ofte direkte under API eller API.extension
+                    const requestFunc = API.request || (API.extension && API.extension.request);
+                    
+                    if (typeof requestFunc !== 'function') {
+                        throw new Error("Fant ikke request-funksjonen i biblioteket.");
                     }
 
-                    if (fileResult && fileResult.downloadUrl) {
+                    const response = await requestFunc({
+                        method: "GET",
+                        url: fileUrl,
+                        headers: {
+                            "Authorization": `Bearer ${accessToken}`,
+                            "Accept": "application/json"
+                        }
+                    });
+
+                    if (response && response.downloadUrl) {
                         const a = document.createElement('a');
-                        a.href = fileResult.downloadUrl;
+                        a.href = response.downloadUrl;
                         a.download = model.name;
                         document.body.appendChild(a);
                         a.click();
                         document.body.removeChild(a);
                         log(`SUKSESS: ${model.name}`);
                     } else {
-                        log(`FEIL: Ingen nedlastingslenke for ${model.name}.`);
+                        log(`FEIL: Serveren ga ikke fra seg lenken for ${model.name}.`, true);
                     }
                 } catch (err) {
-                    log(`FEIL: ${err.message}`);
+                    log(`FEIL: ${err.message}`, true);
                 }
                 await new Promise(r => setTimeout(r, 1000));
             }
