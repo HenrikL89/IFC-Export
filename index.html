@@ -2,40 +2,36 @@
 <html lang="no">
 <head>
     <meta charset="UTF-8">
-    <title>IFC Exporter v17</title>
+    <title>IFC Exporter v18</title>
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 15px; }
-        .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 10px solid #f97316; }
-        .version-badge { background: #f97316; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-align: center; display: block; margin-bottom: 10px; }
+        .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 10px solid #2563eb; }
+        .version-badge { background: #2563eb; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-align: center; display: block; margin-bottom: 10px; }
         h1 { font-size: 18px; color: #111827; margin: 0 0 10px 0; }
         .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 12px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 10px; }
         .btn:disabled { background-color: #d1d5db; cursor: not-allowed; }
         #log { background: #111827; color: #10b981; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; height: 200px; overflow-y: auto; white-space: pre-wrap; margin-bottom: 10px; }
         .manual-btn { display: block; background: #10b981; color: white; text-decoration: none; padding: 12px; border-radius: 5px; text-align: center; font-weight: bold; margin-top: 8px; font-size: 13px; }
         .manual-btn:hover { background: #059669; }
-        .info-text { font-size: 11px; color: #6b7280; margin-top: 10px; background: #fffbeb; padding: 8px; border: 1px solid #fef3c7; border-radius: 4px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="version-badge">VERSION 17.0 (ORANSJE MODUS)</div>
+        <div class="version-badge">VERSION 18.0 (BLÅ MODUS)</div>
         <h1>IFC Exporter</h1>
         
         <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn aktive modeller</button>
         <button id="exportBtn" class="btn" disabled>2. Generer nedlastingslenker</button>
         
-        <div id="log">> Tilkoblet.</div>
+        <div id="log">> Tilkoblet prosjekt.</div>
         <div id="fileList"></div>
-
-        <div class="info-text">
-            <strong>Merk:</strong> Lenkene åpnes i en ny fane for å omgå sikkerhetssperren i Trimble. Nedlastingen starter automatisk der.
-        </div>
     </div>
 
     <script>
         let API = null;
         let accessToken = null;
+        let currentProjectId = null;
         let activeIFCModels = [];
 
         async function init() {
@@ -45,6 +41,8 @@
                         accessToken = typeof args.data === "string" ? args.data : args.data.accessToken;
                     }
                 });
+                const project = await API.project.getCurrentProject();
+                currentProjectId = project.id;
                 await API.extension.requestPermission("accesstoken");
             } catch (err) { log("Feil: " + err.message); }
         }
@@ -66,27 +64,27 @@
         });
 
         document.getElementById('exportBtn').addEventListener('click', async () => {
-            if (!accessToken) {
+            if (!accessToken || !currentProjectId) {
                 const result = await API.extension.requestPermission("accesstoken");
                 accessToken = result.accessToken || result;
             }
 
-            log("Genererer lenker...");
+            log("Genererer lenker for Europeisk server...");
             const fileList = document.getElementById('fileList');
             fileList.innerHTML = ""; 
 
             activeIFCModels.forEach((model) => {
-                // Vi bruker model.modelId hvis den finnes, ellers model.id
-                // model.id i 3D-vinduet er ofte en sesjons-ID, mens modelId er den ekte fil-IDen
-                const realId = model.modelId || model.id;
+                // VIKTIG ENDRING: Vi prøver den offisielle 'download'-stien via prosjektet
+                // Vi bruker model.modelId hvis tilgjengelig, ellers model.id
+                const fileId = model.modelId || model.id;
                 
-                const directUrl = `https://app21.connect.trimble.com/tc/api/2.0/files/${realId}/download?access_token=${accessToken}`;
+                // Ny URL-struktur som er mer akseptert av app21 (Europa)
+                const directUrl = `https://app21.connect.trimble.com/tc/api/2.0/projects/${currentProjectId}/files/${fileId}/download?access_token=${accessToken}`;
 
                 const dl = document.createElement('a');
                 dl.className = "manual-btn";
                 dl.href = directUrl;
-                // VIKTIG: target="_blank" tvinger lenken til å åpne i ny fane og omgår X-Frame-Options
-                dl.target = "_blank";
+                dl.target = "_blank"; // Åpner i ny fane for å unngå Frame-sperre
                 dl.rel = "noopener noreferrer";
                 dl.innerText = "LAST NED: " + model.name;
                 
