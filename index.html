@@ -27,7 +27,7 @@
 
     <div class="container">
         <h1>IFC Viewer Exporter</h1>
-        <div id="status" style="font-size: 13px; margin-bottom: 10px; font-weight: bold;">Klar</div>
+        <div id="status" style="font-size: 13px; margin-bottom: 10px; font-weight: bold; color: #4b5563;">Klar</div>
 
         <button id="scanBtn" class="btn" style="background-color: #4b5563;">1. Finn aktive modeller i 3D</button>
         <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
@@ -45,9 +45,8 @@
             log("API klar.");
         });
 
-        function log(msg, isError = false) {
+        function log(msg, color = "#10b981") {
             const logDiv = document.getElementById('log');
-            const color = isError ? "#ff5f56" : "#10b981";
             logDiv.innerHTML += `<div style="color: ${color}">> ${msg}</div>`;
             logDiv.scrollTop = logDiv.scrollHeight;
         }
@@ -64,23 +63,29 @@
         document.getElementById('scanBtn').addEventListener('click', async () => {
             if (!API) return;
             try {
+                log("Skanner 3D-visning...");
                 const allModels = await API.viewer.getModels();
+                
+                // FILTRERING: Vi ser kun etter modeller som har state === "loaded"
                 activeIFCModels = allModels.filter(m => {
                     const isIfc = m.name.toLowerCase().endsWith('.ifc');
-                    const isAktiv = (m.loaded === true || m.visible === true || m.enabled === true);
-                    return isIfc && isAktiv;
+                    // Vi sjekker spesifikt etter state 'loaded'
+                    const isLoaded = (m.state === 'loaded' || m.loaded === true);
+                    return isIfc && isLoaded;
                 });
 
                 if (activeIFCModels.length === 0) {
-                    log("Ingen aktive modeller funnet.", true);
+                    log("Fant ingen aktive modeller i 3D-vinduet.", "#ff5f56");
+                    log("Sørg for at modellen er lastet inn (vises i 3D).", "#ff5f56");
                     document.getElementById('exportBtn').disabled = true;
                 } else {
-                    log(`KLAR: Fant ${activeIFCModels.length} aktive modeller.`);
+                    log(`FUNNET: ${activeIFCModels.length} aktiv(e) IFC-modell(er).`);
                     activeIFCModels.forEach(m => log(` - ${m.name}`));
                     document.getElementById('exportBtn').disabled = false;
+                    document.getElementById('status').innerText = `${activeIFCModels.length} modell(er) klar.`;
                 }
             } catch (err) {
-                log("Feil ved skanning: " + err.message, true);
+                log("Feil ved skanning: " + err.message, "#ff5f56");
             }
         });
 
@@ -91,29 +96,25 @@
 
             for (let i = 0; i < activeIFCModels.length; i++) {
                 const model = activeIFCModels[i];
-                // VIKTIG: Vi prøver først modelId, deretter id
-                const fileId = model.modelId || model.id;
-                
-                log(`Prøver å hente fil-data for: ${model.name}...`);
+                // Bruker model.id som vi så i debuggen din var fil-ID-en
+                const fileId = model.id;
                 
                 try {
-                    // Vi ber om fileData fra prosjektet
+                    log(`Laster ned: ${model.name}...`);
                     const fileData = await API.project.getFile(fileId);
                     
                     if (fileData && fileData.downloadUrl) {
                         downloadFile(fileData.downloadUrl, model.name);
-                        log(`Suksess: ${model.name}`);
-                    } else {
-                        throw new Error("Ingen nedlastings-URL funnet.");
+                        log(`OK: ${model.name}`);
                     }
                     
-                    await new Promise(r => setTimeout(r, 1200));
+                    // Pause for å unngå nettleser-sperre
+                    await new Promise(r => setTimeout(r, 1000));
                 } catch (e) {
-                    log(`FEIL med ${model.name}: ${e.message}`, true);
-                    console.error("Nedlastingsfeil:", e);
+                    log(`FEIL med ${model.name}: ${e.message}`, "#ff5f56");
                 }
             }
-            log("Prosess fullført.");
+            log("Fullført.");
             btn.disabled = false;
         });
     </script>
