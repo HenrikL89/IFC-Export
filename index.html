@@ -32,14 +32,15 @@
         <button id="scanBtn" class="btn" style="background-color: #4b5563;">1. Finn aktive modeller i 3D</button>
         <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
         
-        <div id="log">> Tilkoblet.</div>
+        <div id="log">> Koblet til Trimble Connect.</div>
     </div>
 
     <script>
         let API = null;
         let activeIFCModels = [];
 
-        TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
+        // Kobler til med det nye biblioteket
+        window.TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
         }).then((api) => {
             API = api;
             log("API klar.");
@@ -66,17 +67,15 @@
                 log("Skanner 3D-visning...");
                 const allModels = await API.viewer.getModels();
                 
-                // FILTRERING: Vi ser kun etter modeller som har state === "loaded"
                 activeIFCModels = allModels.filter(m => {
                     const isIfc = m.name.toLowerCase().endsWith('.ifc');
-                    // Vi sjekker spesifikt etter state 'loaded'
+                    // Sjekker om den er lastet i vieweren
                     const isLoaded = (m.state === 'loaded' || m.loaded === true);
                     return isIfc && isLoaded;
                 });
 
                 if (activeIFCModels.length === 0) {
-                    log("Fant ingen aktive modeller i 3D-vinduet.", "#ff5f56");
-                    log("Sørg for at modellen er lastet inn (vises i 3D).", "#ff5f56");
+                    log("Ingen aktive modeller funnet i 3D-vinduet.", "#ff5f56");
                     document.getElementById('exportBtn').disabled = true;
                 } else {
                     log(`FUNNET: ${activeIFCModels.length} aktiv(e) IFC-modell(er).`);
@@ -96,22 +95,26 @@
 
             for (let i = 0; i < activeIFCModels.length; i++) {
                 const model = activeIFCModels[i];
-                // Bruker model.id som vi så i debuggen din var fil-ID-en
                 const fileId = model.id;
                 
                 try {
-                    log(`Laster ned: ${model.name}...`);
-                    const fileData = await API.project.getFile(fileId);
+                    log(`Henter data for: ${model.name}...`);
                     
-                    if (fileData && fileData.downloadUrl) {
-                        downloadFile(fileData.downloadUrl, model.name);
+                    // I det NYE API-et (som du bruker) heter funksjonen getFiles([id])
+                    // Den tar en liste med ID-er og returnerer en liste med resultater
+                    const files = await API.project.getFiles([fileId]);
+                    
+                    if (files && files.length > 0 && files[0].downloadUrl) {
+                        downloadFile(files[0].downloadUrl, model.name);
                         log(`OK: ${model.name}`);
+                    } else {
+                        log(`Kunne ikke finne nedlastings-URL for ${model.name}`, "#ff5f56");
                     }
                     
-                    // Pause for å unngå nettleser-sperre
                     await new Promise(r => setTimeout(r, 1000));
                 } catch (e) {
-                    log(`FEIL med ${model.name}: ${e.message}`, "#ff5f56");
+                    // Hvis getFiles også feiler, logger vi nøyaktig hva som skjedde
+                    log(`FEIL: ${e.message}`, "#ff5f56");
                 }
             }
             log("Fullført.");
