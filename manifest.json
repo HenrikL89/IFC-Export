@@ -1,21 +1,6 @@
 {
-  "manifestVersion": 1,
-  "id": "ifc-exp-v11",
-  "name": "IFC Batch Exporter",
-  "version": "1.1.0",
-  "publisher": "Henrik",
-  "entryPoints": [
-    {
-      "type": "viewer-side-panel",
-      "id": "ifc-panel",
-      "name": "IFC Eksport",
-      "url": "https://henrikl89.github.io/IFC-Export/index.html",
-      "icon": "https://img.icons8.com/color/48/download.png"
-    }
-  ],
-  "permissions": [
-    "viewer.read",
-    "project.read",
-    "file.read"
-  ]
+  "title": "IFC Batch Exporter",
+  "url": "https://henrikl89.github.io/IFC-Export/index.html",
+  "description": "Laster ned aktive IFC-modeller fra 3D-visningen",
+  "icon": "https://img.icons8.com/color/48/download.png"
 }
