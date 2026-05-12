@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IFC Exporter v4</title>
+    <title>IFC Exporter v5</title>
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 15px; }
-        .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #0078d4; }
-        h1 { font-size: 18px; color: #0078d4; margin: 0 0 10px 0; }
+        .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #ef4444; }
+        .version-tag { background: #ef4444; color: white; padding: 5px 10px; border-radius: 4px; font-weight: bold; display: inline-block; margin-bottom: 10px; }
+        h1 { font-size: 18px; color: #111827; margin: 0 0 10px 0; }
         .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 12px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 10px; }
         .btn:disabled { background-color: #d1d5db; }
         #log { margin-top: 15px; background: #111827; color: #10b981; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 11px; height: 300px; overflow-y: auto; white-space: pre-wrap; }
@@ -16,10 +17,13 @@
 </head>
 <body>
     <div class="container">
-        <h1>IFC Exporter <span style="font-size: 10px; color: #999;">v4.0 (PROXY FIX)</span></h1>
+        <div class="version-tag">VERSJON 5.0 (CACHE-SJEKK)</div>
+        <h1>IFC Exporter</h1>
+        <p style="font-size: 11px; color: #666;">Hvis du ikke ser den røde boksen over, må du trykke CTRL+F5.</p>
+        
         <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn aktive modeller</button>
         <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
-        <div id="log">> Initialiserer...</div>
+        <div id="log">> Venter på API...</div>
     </div>
 
     <script>
@@ -29,11 +33,10 @@
 
         async function init() {
             try {
-                // Initialiserer API-et på samme måte som Dashboardet ditt
                 API = await TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
                     if (event === "extension.accessToken") {
                         accessToken = typeof args.data === "string" ? args.data : args.data.accessToken;
-                        log("Sikkerhetstoken mottatt.");
+                        log("Token mottatt.");
                     }
                 });
                 
@@ -54,49 +57,33 @@
             if (!API) return;
             try {
                 const models = await API.viewer.getModels();
-                activeIFCModels = models.filter(m => 
-                    m.name.toLowerCase().endsWith('.ifc') && 
-                    (m.state === 'loaded' || m.loaded === true)
-                );
-                
+                activeIFCModels = models.filter(m => m.name.toLowerCase().endsWith('.ifc') && (m.state === 'loaded' || m.loaded === true));
                 log(`Fant ${activeIFCModels.length} aktive modeller.`);
-                if (activeIFCModels.length > 0) {
-                    document.getElementById('exportBtn').disabled = false;
-                }
-            } catch (err) {
-                log("Skanning feilet: " + err.message, true);
-            }
+                if (activeIFCModels.length > 0) document.getElementById('exportBtn').disabled = false;
+            } catch (err) { log("Skanning feilet.", true); }
         });
 
         document.getElementById('exportBtn').addEventListener('click', async () => {
             if (!API || !accessToken) return;
-            
             const btn = document.getElementById('exportBtn');
             btn.disabled = true;
 
+            // Loggen din viser at du er i Europa (eu). Vi prøver Europa-serveren først.
+            const regions = ["https://app21.connect.trimble.com", "https://app.connect.trimble.com"];
+
             for (const model of activeIFCModels) {
                 let success = false;
-                log(`Henter nedlastingslenke for ${model.name}...`);
-
-                // Vi prøver både Europa (app21) og USA (app)
-                const regions = ["https://app21.connect.trimble.com", "https://app.connect.trimble.com"];
+                log(`Henter ${model.name}...`);
 
                 for (const base of regions) {
                     try {
-                        const fileUrl = `${base}/tc/api/2.0/files/${model.id}`;
-                        
-                        // VIKTIG: Vi bruker API.extension.request i stedet for fetch!
-                        // Dette sender forespørselen via Trimble Connect-hovedvinduet og omgår CORS.
+                        // VIKTIG: API.extension.request brukes for å gå rundt CORS-sperren
                         const response = await API.extension.request({
-                            url: fileUrl,
+                            url: `${base}/tc/api/2.0/files/${model.id}`,
                             method: "GET",
-                            headers: {
-                                "Authorization": `Bearer ${accessToken}`,
-                                "Accept": "application/json"
-                            }
+                            headers: { "Authorization": `Bearer ${accessToken}` }
                         });
 
-                        // Sjekker om vi fikk et gyldig svar med en downloadUrl
                         if (response && response.downloadUrl) {
                             const a = document.createElement('a');
                             a.href = response.downloadUrl;
@@ -104,17 +91,13 @@
                             document.body.appendChild(a);
                             a.click();
                             document.body.removeChild(a);
-                            
-                            log(`Suksess via ${base.includes('app21') ? 'Europa' : 'USA'}`);
+                            log(`Suksess via ${base.includes('app21') ? 'EU' : 'US'}`);
                             success = true;
                             break;
                         }
-                    } catch (e) {
-                        // Prøv neste region hvis denne feiler
-                    }
+                    } catch (e) { }
                 }
-
-                if (!success) log(`Kunne ikke hente ${model.name} (404 eller CORS)`, true);
+                if (!success) log(`Feil: Kunne ikke hente ${model.name}`, true);
                 await new Promise(r => setTimeout(r, 1000));
             }
             log("Ferdig.");
