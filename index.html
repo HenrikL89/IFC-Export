@@ -2,30 +2,26 @@
 <html lang="no">
 <head>
     <meta charset="UTF-8">
-    <title>IFC Exporter v15</title>
+    <title>IFC Exporter v16</title>
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 15px; }
-        .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 10px solid #10b981; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-        h1 { font-size: 18px; color: #111827; margin: 0; }
-        .version-badge { background: #10b981; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; }
+        .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 10px solid #06b6d4; }
+        .version-badge { background: #06b6d4; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-align: center; display: block; margin-bottom: 10px; }
+        h1 { font-size: 18px; color: #111827; margin: 0 0 10px 0; }
         .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 12px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 10px; }
         .btn:disabled { background-color: #d1d5db; cursor: not-allowed; }
-        #log { background: #111827; color: #10b981; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; height: 300px; overflow-y: auto; white-space: pre-wrap; }
-        .download-item { background: #e5e7eb; padding: 8px; margin-top: 5px; border-radius: 4px; font-size: 11px; display: flex; justify-content: space-between; align-items: center; }
-        .manual-btn { background: #10b981; color: white; text-decoration: none; padding: 4px 8px; border-radius: 3px; font-weight: bold; }
+        #log { background: #111827; color: #10b981; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; height: 250px; overflow-y: auto; white-space: pre-wrap; }
+        .manual-btn { display: block; background: #10b981; color: white; text-decoration: none; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; margin-top: 5px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>IFC Exporter</h1>
-            <span class="version-badge">VERSION 15.0</span>
-        </div>
+        <div class="version-badge">VERSION 16.0 (TURKIS MODUS)</div>
+        <h1>IFC Exporter</h1>
         
         <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn aktive modeller</button>
-        <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
+        <button id="exportBtn" class="btn" disabled>2. Generer nedlastingslenker</button>
         
         <div id="log">> Initialiserer...</div>
         <div id="fileList"></div>
@@ -36,17 +32,28 @@
         let accessToken = null;
         let activeIFCModels = [];
 
-        // Initialiserer API (samme som ditt dashboard)
-        TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
-            if (event === "extension.accessToken") {
-                accessToken = typeof args.data === "string" ? args.data : args.data.accessToken;
-                log("Sikkerhetstoken mottatt.");
+        // Initialiserer API og lytter etter token (Slik som i dashboardet ditt)
+        async function init() {
+            try {
+                API = await TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
+                    if (event === "extension.accessToken" && args.data) {
+                        accessToken = typeof args.data === "string" ? args.data : args.data.accessToken;
+                        log("Token mottatt via event.");
+                    }
+                });
+
+                log("Tilkoblet. Ber om sikkerhetstoken...");
+                
+                // Vi prøver å hente tokenet direkte fra svaret (Promise)
+                const result = await API.extension.requestPermission("accesstoken");
+                if (result) {
+                    accessToken = result.accessToken || result;
+                    if (typeof accessToken === 'string') log("Token mottatt via forespørsel.");
+                }
+            } catch (err) {
+                log("Feil ved oppstart: " + err.message);
             }
-        }).then((api) => {
-            API = api;
-            API.extension.requestPermission("accesstoken");
-            log("Tilkoblet Trimble Connect.");
-        });
+        }
 
         function log(msg) {
             const logDiv = document.getElementById('log');
@@ -67,50 +74,45 @@
                 if (activeIFCModels.length > 0) {
                     document.getElementById('exportBtn').disabled = false;
                 }
-            } catch (err) {
-                log("FEIL ved skanning: " + err.message);
-            }
+            } catch (err) { log("Skanning feilet."); }
         });
 
-        document.getElementById('exportBtn').addEventListener('click', () => {
-            if (!accessToken || activeIFCModels.length === 0) {
-                log("Mangler token eller modeller.");
+        document.getElementById('exportBtn').addEventListener('click', async () => {
+            // Hvis vi fortsatt mangler token, prøver vi en siste gang å be om det
+            if (!accessToken && API) {
+                log("Mangler token, prøver å hente på nytt...");
+                const result = await API.extension.requestPermission("accesstoken");
+                accessToken = result.accessToken || result;
+            }
+
+            if (!accessToken) {
+                log("FEIL: Kunne ikke hente sikkerhetstoken fra Trimble.");
                 return;
             }
 
-            log("Genererer nedlastingslenker...");
+            log("Genererer lenker for Europeisk server...");
             const fileList = document.getElementById('fileList');
-            fileList.innerHTML = ""; // Rens listen
+            fileList.innerHTML = ""; 
 
-            activeIFCModels.forEach((model, index) => {
-                // VIKTIG: Vi lager en direkte lenke som inkluderer tokenet som en parameter.
-                // Dette omgår CORS fordi det er en vanlig nettleser-navigasjon.
-                // Vi bruker app21 (Europa) som base.
+            activeIFCModels.forEach((model) => {
+                // Vi bruker den europeiske server-adressen for direkte nedlasting
                 const directUrl = `https://app21.connect.trimble.com/tc/api/2.0/files/${model.id}/download?access_token=${accessToken}`;
 
-                // Vi lager en visuell knapp for hver fil i tilfelle batch-nedlasting blokkeres
-                const item = document.createElement('div');
-                item.className = "download-item";
-                item.innerHTML = `
-                    <span>${model.name}</span>
-                    <a href="${directUrl}" class="manual-btn" download="${model.name}">Last ned</a>
-                `;
-                fileList.appendChild(item);
-
-                // Vi prøver å trigge nedlastingen automatisk med en liten pause
-                setTimeout(() => {
-                    log(`Prøver nedlasting: ${model.name}`);
-                    const a = document.createElement('a');
-                    a.href = directUrl;
-                    a.download = model.name;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                }, index * 1000); 
+                const dl = document.createElement('a');
+                dl.className = "manual-btn";
+                dl.href = directUrl;
+                dl.innerText = "Last ned " + model.name;
+                // 'download'-attributtet tvinger nettleseren til å lagre filen
+                dl.setAttribute("download", model.name); 
+                fileList.appendChild(dl);
+                
+                log(`Klar: ${model.name}`);
             });
 
-            log("Ferdig. Hvis ingenting skjer, klikk på de grønne knappene.");
+            log("Klikk på de grønne knappene over for å lagre.");
         });
+
+        init();
     </script>
 </body>
 </html>
