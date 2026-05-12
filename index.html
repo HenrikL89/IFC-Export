@@ -3,23 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IFC Exporter v6</title>
+    <title>IFC Exporter v7</title>
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 10px; }
-        .container { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #000; }
-        .version-tag { background: #000; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 10px; display: inline-block; margin-bottom: 10px; }
-        h1 { font-size: 16px; margin: 0 0 10px 0; }
-        .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 10px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 8px; }
+        .container { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #3b82f6; }
+        .version-tag { background: #3b82f6; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 10px; display: inline-block; margin-bottom: 10px; }
+        h1 { font-size: 16px; margin: 0 0 10px 0; color: #111827; }
+        .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 12px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 8px; }
         .btn:disabled { background-color: #ccc; }
-        #log { background: #111; color: #10b981; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 10px; height: 350px; overflow-y: auto; white-space: pre-wrap; border: 1px solid #333; }
-        .err { color: #ff5f56; font-weight: bold; }
-        .dbg { color: #f59e0b; }
+        #log { background: #111; color: #10b981; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 10px; height: 350px; overflow-y: auto; white-space: pre-wrap; }
+        .err { color: #ff5f56; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="version-tag">VERSJON 6.0 (DEEP DEBUG)</div>
+        <div class="version-tag">VERSJON 7.0 (OPEN21 REST)</div>
         <h1>IFC Exporter</h1>
         <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn aktive modeller</button>
         <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
@@ -27,12 +26,15 @@
     </div>
 
     <script>
-        let API = null, accessToken = null, activeIFCModels = [];
+        let API = null;
+        let accessToken = null;
+        let activeIFCModels = [];
 
+        // Initialiserer nøyaktig slik som i ditt fungerende Dashboard
         async function init() {
             try {
                 API = await TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
-                    if (event === "extension.accessToken") {
+                    if (event === "extension.accessToken" && args.data) {
                         accessToken = typeof args.data === "string" ? args.data : args.data.accessToken;
                         log("Token mottatt.");
                     }
@@ -51,6 +53,7 @@
         document.getElementById('scanBtn').addEventListener('click', async () => {
             try {
                 const models = await API.viewer.getModels();
+                // Vi finner alle som er 'loaded'
                 activeIFCModels = models.filter(m => m.name.toLowerCase().endsWith('.ifc') && (m.state === 'loaded' || m.loaded === true));
                 log(`Fant ${activeIFCModels.length} aktive modeller.`);
                 if (activeIFCModels.length > 0) document.getElementById('exportBtn').disabled = false;
@@ -58,53 +61,51 @@
         });
 
         document.getElementById('exportBtn').addEventListener('click', async () => {
+            if (!accessToken) { log("Mangler token!", "err"); return; }
+            
             const btn = document.getElementById('exportBtn');
             btn.disabled = true;
 
             for (const model of activeIFCModels) {
-                log(`\n--- BEHANDLER: ${model.name} ---`, "dbg");
-                log(`ID som brukes: ${model.id}`, "dbg");
+                log(`Henter ${model.name}...`);
                 
-                let success = false;
-                const regions = ["https://app21.connect.trimble.com", "https://app.connect.trimble.com"];
+                // Vi bruker OPEN21-serveren. Denne tillater forespørsler fra GitHub (CORS OK)
+                // og fungerer med samme token som Dashboardet ditt.
+                const url = `https://open21.connect.trimble.com/tc/api/2.0/files/${model.id}`;
 
-                for (const base of regions) {
-                    const url = `${base}/tc/api/2.0/files/${model.id}`;
-                    log(`Prøver region: ${base}...`, "dbg");
-
-                    try {
-                        const response = await API.extension.request({
-                            url: url,
-                            method: "GET",
-                            headers: { "Authorization": `Bearer ${accessToken}` }
-                        });
-
-                        // DEBUG: Logg hva vi faktisk får tilbake
-                        if (response) {
-                            if (response.downloadUrl) {
-                                log(`SUKSESS! Fant URL.`);
-                                const a = document.createElement('a');
-                                a.href = response.downloadUrl;
-                                a.download = model.name;
-                                a.click();
-                                success = true;
-                                break;
-                            } else {
-                                log(`Svar mottatt, men ingen downloadUrl. Status: ${response.status || 'ukjent'}`, "dbg");
-                                if (response.errors) log(`Feil fra server: ${JSON.stringify(response.errors)}`, "err");
-                            }
-                        } else {
-                            log(`Tomt svar fra ${base}`, "err");
+                try {
+                    const resp = await fetch(url, {
+                        method: "GET",
+                        headers: {
+                            "Authorization": `Bearer ${accessToken}`,
+                            "Accept": "application/json"
                         }
-                    } catch (e) {
-                        log(`Kall mot ${base} krasjet: ${e.message}`, "err");
-                    }
-                }
+                    });
 
-                if (!success) log(`KUNNE IKKE HENTE ${model.name}. Sjekk feilmeldingene over.`, "err");
+                    if (resp.ok) {
+                        const fileData = await resp.json();
+                        if (fileData.downloadUrl) {
+                            const a = document.createElement('a');
+                            a.href = fileData.downloadUrl;
+                            a.download = model.name;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            log(`SUKSESS: ${model.name}`);
+                        } else {
+                            log(`Feil: Ingen downloadUrl for ${model.name}`, "err");
+                        }
+                    } else {
+                        log(`Serverfeil ${resp.status} for ${model.name}`, "err");
+                    }
+                } catch (e) {
+                    log(`Kritisk feil ved henting: ${e.message}`, "err");
+                }
+                
+                // Vent litt mellom hver fil
                 await new Promise(r => setTimeout(r, 1000));
             }
-            log("\n--- Ferdig ---", "dbg");
+            log("Ferdig.");
             btn.disabled = false;
         });
 
