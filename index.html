@@ -27,24 +27,36 @@
 
     <div class="container">
         <h1>IFC Viewer Exporter</h1>
-        <div id="status" style="font-size: 13px; margin-bottom: 10px; font-weight: bold; color: #4b5563;">Klar</div>
+        <div id="status" style="font-size: 13px; margin-bottom: 10px; font-weight: bold; color: #4b5563;">Venter på token...</div>
 
         <button id="scanBtn" class="btn" style="background-color: #4b5563;">1. Finn aktive modeller i 3D</button>
         <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
         
-        <div id="log">> Koblet til Trimble Connect.</div>
+        <div id="log">> Kobler til Trimble Connect...</div>
     </div>
 
     <script>
         let API = null;
+        let accessToken = null;
         let activeIFCModels = [];
 
-        // Kobler til med det nye biblioteket
-        window.TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
-        }).then((api) => {
-            API = api;
-            log("API klar.");
-        });
+        // 1. Initialiserer API og ber om Token (samme som Topics Dashboard)
+        async function init() {
+            try {
+                API = await TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
+                    if (event === "extension.accessToken") {
+                        accessToken = typeof args.data === "string" ? args.data : args.data.accessToken;
+                        log("Access Token mottatt.");
+                        document.getElementById('status').innerText = "Klar til skanning";
+                    }
+                });
+
+                // Be spesifikt om tilgang til token
+                await API.extension.requestPermission("accesstoken");
+            } catch (err) {
+                log("Feil ved oppstart: " + err.message, "#ff5f56");
+            }
+        }
 
         function log(msg, color = "#10b981") {
             const logDiv = document.getElementById('log');
@@ -61,6 +73,7 @@
             setTimeout(() => document.body.removeChild(a), 500);
         }
 
+        // 2. Finn aktive modeller i viewer
         document.getElementById('scanBtn').addEventListener('click', async () => {
             if (!API) return;
             try {
@@ -69,57 +82,65 @@
                 
                 activeIFCModels = allModels.filter(m => {
                     const isIfc = m.name.toLowerCase().endsWith('.ifc');
-                    // Sjekker om den er lastet i vieweren
                     const isLoaded = (m.state === 'loaded' || m.loaded === true);
                     return isIfc && isLoaded;
                 });
 
                 if (activeIFCModels.length === 0) {
-                    log("Ingen aktive modeller funnet i 3D-vinduet.", "#ff5f56");
-                    document.getElementById('exportBtn').disabled = true;
+                    log("Ingen aktive modeller funnet.", "#ff5f56");
                 } else {
-                    log(`FUNNET: ${activeIFCModels.length} aktiv(e) IFC-modell(er).`);
+                    log(`FUNNET: ${activeIFCModels.length} aktiv(e) modell(er).`);
                     activeIFCModels.forEach(m => log(` - ${m.name}`));
                     document.getElementById('exportBtn').disabled = false;
-                    document.getElementById('status').innerText = `${activeIFCModels.length} modell(er) klar.`;
                 }
             } catch (err) {
-                log("Feil ved skanning: " + err.message, "#ff5f56");
+                log("Skanning feilet: " + err.message, "#ff5f56");
             }
         });
 
+        // 3. Last ned ved å bruke REST API direkte med token
         document.getElementById('exportBtn').addEventListener('click', async () => {
+            if (!accessToken) {
+                log("Mangler tilgangstoken. Prøv å laste siden på nytt.", "#ff5f56");
+                return;
+            }
+
             const btn = document.getElementById('exportBtn');
             btn.disabled = true;
-            log("Starter nedlasting...");
+            log("Starter batch-nedlasting...");
 
-            for (let i = 0; i < activeIFCModels.length; i++) {
-                const model = activeIFCModels[i];
-                const fileId = model.id;
-                
+            for (const model of activeIFCModels) {
                 try {
-                    log(`Henter data for: ${model.name}...`);
+                    log(`Henter nedlastingslenke for ${model.name}...`);
                     
-                    // I det NYE API-et (som du bruker) heter funksjonen getFiles([id])
-                    // Den tar en liste med ID-er og returnerer en liste med resultater
-                    const files = await API.project.getFiles([fileId]);
+                    // Vi kaller Trimble Connect REST API direkte (v2.0)
+                    const response = await fetch(`https://app.connect.trimble.com/tc/api/2.0/files/${model.id}`, {
+                        method: "GET",
+                        headers: {
+                            "Authorization": `Bearer ${accessToken}`,
+                            "Accept": "application/json"
+                        }
+                    });
+
+                    if (!response.ok) throw new Error(`Server svarte med ${response.status}`);
+
+                    const fileData = await response.json();
                     
-                    if (files && files.length > 0 && files[0].downloadUrl) {
-                        downloadFile(files[0].downloadUrl, model.name);
-                        log(`OK: ${model.name}`);
-                    } else {
-                        log(`Kunne ikke finne nedlastings-URL for ${model.name}`, "#ff5f56");
+                    if (fileData.downloadUrl) {
+                        downloadFile(fileData.downloadUrl, model.name);
+                        log(`Suksess: ${model.name}`);
                     }
                     
                     await new Promise(r => setTimeout(r, 1000));
                 } catch (e) {
-                    // Hvis getFiles også feiler, logger vi nøyaktig hva som skjedde
-                    log(`FEIL: ${e.message}`, "#ff5f56");
+                    log(`FEIL med ${model.name}: ${e.message}`, "#ff5f56");
                 }
             }
-            log("Fullført.");
+            log("Ferdig.");
             btn.disabled = false;
         });
+
+        init();
     </script>
 </body>
 </html>
