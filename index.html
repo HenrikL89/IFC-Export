@@ -2,43 +2,49 @@
 <html lang="no">
 <head>
     <meta charset="UTF-8">
-    <title>IFC Exporter v11</title>
+    <title>IFC Exporter v12</title>
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 10px; }
-        .container { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 8px solid #db2777; }
-        .cache-checker { background: #db2777; color: #fff; padding: 5px; text-align: center; font-weight: bold; font-size: 10px; border-radius: 4px; margin-bottom: 10px; }
+        .container { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 8px solid #3b82f6; }
+        .status-bar { background: #3b82f6; color: #fff; padding: 5px; text-align: center; font-weight: bold; font-size: 10px; border-radius: 4px; margin-bottom: 10px; }
         h1 { font-size: 16px; margin: 0 0 10px 0; color: #111827; }
         .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 12px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 8px; }
         .btn:disabled { background-color: #ccc; }
-        #log { background: #111; color: #10b981; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 10px; height: 350px; overflow-y: auto; white-space: pre-wrap; }
-        .err { color: #ff5f56; font-weight: bold; }
+        #log { background: #111; color: #10b981; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 10px; height: 300px; overflow-y: auto; white-space: pre-wrap; }
+        .dl-link { display: block; background: #10b981; color: white; padding: 8px; margin-top: 5px; text-decoration: none; border-radius: 4px; text-align: center; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="cache-checker">VERSJON 11.0 (MAGENTA MODUS)</div>
+        <div class="status-bar">VERSJON 12.0 (AZURE READY)</div>
         <h1>IFC Batch Exporter</h1>
         <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn aktive modeller</button>
         <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
         <div id="log">> Initialiserer...</div>
+        <div id="manual-links"></div>
     </div>
 
     <script>
         let API = null;
+        let accessToken = null;
         let activeIFCModels = [];
 
         async function init() {
             try {
-                API = await TrimbleConnectWorkspace.connect(window.parent, (event, args) => {});
-                log("Tilkoblet API.");
-                document.getElementById('log').innerText = "> API Klar. Klikk 'Finn modeller'.";
-            } catch (err) { log("Oppstart-feil: " + err.message, "err"); }
+                API = await TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
+                    if (event === "extension.accessToken") {
+                        accessToken = typeof args.data === "string" ? args.data : args.data.accessToken;
+                    }
+                });
+                await API.extension.requestPermission("accesstoken");
+                log("Tilkoblet Trimble Connect.");
+            } catch (err) { log("Feil: " + err.message); }
         }
 
-        function log(msg, className = "") {
+        function log(msg) {
             const logDiv = document.getElementById('log');
-            logDiv.innerHTML += `\n<span class="${className}">> ${msg}</span>`;
+            logDiv.innerText += `\n> ${msg}`;
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
@@ -47,51 +53,55 @@
             try {
                 const models = await API.viewer.getModels();
                 activeIFCModels = models.filter(m => m.name.toLowerCase().endsWith('.ifc') && (m.state === 'loaded' || m.loaded === true));
-                log(`Fant ${activeIFCModels.length} aktive IFC-filer.`);
-                if (activeIFCModels.length > 0) {
-                    document.getElementById('exportBtn').disabled = false;
-                }
-            } catch (err) { log("Skanning feilet.", "err"); }
+                log(`Fant ${activeIFCModels.length} aktive modeller.`);
+                if (activeIFCModels.length > 0) document.getElementById('exportBtn').disabled = false;
+            } catch (err) { log("Skanning feilet."); }
         });
 
         document.getElementById('exportBtn').addEventListener('click', async () => {
             const btn = document.getElementById('exportBtn');
+            const linkArea = document.getElementById('manual-links');
+            linkArea.innerHTML = "";
             btn.disabled = true;
 
-            for (const model of activeIFCModels) {
-                log(`Behandler ${model.name}...`);
-                try {
-                    // Vi prøver å tvinge frem nedlastingslenken via Prosjekt-objektet
-                    let fileObj = null;
-                    
-                    // Sjekker om getFiles eksisterer (Nyere API)
-                    if (API.project && typeof API.project.getFiles === 'function') {
-                        const res = await API.project.getFiles([model.id]);
-                        fileObj = res ? res[0] : null;
-                    } 
-                    // Sjekker om getFile eksisterer (Eldre API)
-                    else if (API.project && typeof API.project.getFile === 'function') {
-                        fileObj = await API.project.getFile(model.id);
-                    }
+            log("Henter nedlastingslenker...");
 
-                    if (fileObj && fileObj.downloadUrl) {
-                        const a = document.createElement('a');
-                        a.href = fileObj.downloadUrl;
-                        a.download = model.name;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        log(`SUKSESS: ${model.name}`);
+            for (const model of activeIFCModels) {
+                try {
+                    // Vi bruker Trimbles åpne API-server som vi vet fungerer i ditt prosjekt
+                    const url = `https://open21.connect.trimble.com/tc/api/2.0/files/${model.id}`;
+                    
+                    const resp = await fetch(url, {
+                        headers: { "Authorization": `Bearer ${accessToken}` }
+                    });
+
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.downloadUrl) {
+                            // Vi prøver automatisk nedlasting
+                            const a = document.createElement('a');
+                            a.href = data.downloadUrl;
+                            a.download = model.name;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            
+                            // Vi lager også en manuell knapp i tilfelle nettleseren blokkerer
+                            const dl = document.createElement('a');
+                            dl.className = "dl-link";
+                            dl.href = data.downloadUrl;
+                            dl.innerText = "Klikk her for " + model.name;
+                            linkArea.appendChild(dl);
+                            
+                            log(`Klar: ${model.name}`);
+                        }
                     } else {
-                        log(`FEIL: Ingen nedlastingslenke mottatt for ${model.name}.`, "err");
-                        log(`Prøv å fjerne og legge til utvidelsen i prosjektet på nytt.`, "err");
+                        log(`Feil ${resp.status} for ${model.name}`);
                     }
                 } catch (err) {
-                    log(`FEIL: ${err.message}`, "err");
+                    log(`CORS/Nettverksfeil for ${model.name}`);
                 }
-                await new Promise(r => setTimeout(r, 1000));
             }
-            log("Ferdig.");
             btn.disabled = false;
         });
 
