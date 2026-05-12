@@ -3,26 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IFC Exporter v9</title>
+    <title>IFC Exporter v10</title>
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 10px; }
-        .container { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 8px solid #fbbf24; }
-        .cache-checker { background: #fbbf24; color: #000; padding: 5px; text-align: center; font-weight: bold; font-size: 10px; border-radius: 4px; margin-bottom: 10px; }
+        .container { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 8px solid #a855f7; }
+        .cache-checker { background: #a855f7; color: #fff; padding: 5px; text-align: center; font-weight: bold; font-size: 10px; border-radius: 4px; margin-bottom: 10px; }
         h1 { font-size: 16px; margin: 0 0 10px 0; color: #111827; }
         .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 12px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 8px; }
         .btn:disabled { background-color: #ccc; }
         #log { background: #111; color: #10b981; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 10px; height: 350px; overflow-y: auto; white-space: pre-wrap; }
         .err { color: #ff5f56; font-weight: bold; }
+        .info { color: #3b82f6; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="cache-checker">VERSJON 9.0 (GUL MODUS - INGEN FETCH)</div>
+        <div class="cache-checker">VERSJON 10.0 (LILLA MODUS - DEEP SCAN)</div>
         <h1>IFC Batch Exporter</h1>
         <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn aktive modeller</button>
         <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
-        <div id="log">> Initialiserer API...</div>
+        <div id="log">> Initialiserer...</div>
     </div>
 
     <script>
@@ -31,11 +32,14 @@
 
         async function init() {
             try {
-                API = await TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
-                    if (event === "extension.accessToken") log("Sikkerhetsnøkkel oppdatert.");
-                });
-                log("Tilkoblet Trimble Connect.");
-                document.getElementById('log').innerText = "> API Klar. Klikk 'Finn modeller'.";
+                API = await TrimbleConnectWorkspace.connect(window.parent, (event, args) => {});
+                
+                // Inspiser tilgjengelige funksjoner
+                const projectMethods = Object.keys(API.project || {}).join(", ");
+                log("Prosjekt-funksjoner funnet: " + projectMethods, "info");
+                
+                await API.extension.requestPermission("accesstoken");
+                log("Tilkoblet. Klikk 'Finn modeller'.");
             } catch (err) { log("Oppstart-feil: " + err.message, "err"); }
         }
 
@@ -55,7 +59,7 @@
                     activeIFCModels.forEach(m => log(`- Klar: ${m.name}`));
                     document.getElementById('exportBtn').disabled = false;
                 }
-            } catch (err) { log("Skanning feilet: " + err.message, "err"); }
+            } catch (err) { log("Skanning feilet.", "err"); }
         });
 
         document.getElementById('exportBtn').addEventListener('click', async () => {
@@ -65,37 +69,37 @@
             for (const model of activeIFCModels) {
                 log(`Behandler ${model.name}...`);
                 try {
-                    let downloadUrl = null;
-
-                    // Vi prøver alle mulige funksjoner i biblioteket for å finne filen:
-                    // Dette omgår CORS fordi vi ikke bruker fetch()
-                    if (API.project && typeof API.project.getFiles === 'function') {
+                    // Vi prøver å hente objektet med alle mulige metoder
+                    let fileObj = null;
+                    
+                    if (API.project.getFiles) {
                         const res = await API.project.getFiles([model.id]);
-                        if (res && res[0]) downloadUrl = res[0].downloadUrl;
-                    } 
-                    else if (API.project && typeof API.project.getFile === 'function') {
-                        const res = await API.project.getFile(model.id);
-                        if (res) downloadUrl = res.downloadUrl;
-                    }
-                    else if (typeof API.getFile === 'function') {
-                        const res = await API.getFile(model.id);
-                        if (res) downloadUrl = res.downloadUrl;
+                        fileObj = res ? res[0] : null;
+                    } else if (API.project.getFile) {
+                        fileObj = await API.project.getFile(model.id);
                     }
 
-                    if (downloadUrl) {
-                        const a = document.createElement('a');
-                        a.href = downloadUrl;
-                        a.download = model.name;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        log(`SUKSESS: Nedlasting startet for ${model.name}`);
+                    if (fileObj) {
+                        // Vi sjekker alle mulige steder nedlastingslenken kan ligge
+                        const url = fileObj.downloadUrl || fileObj.url || (fileObj.props ? fileObj.props.downloadUrl : null);
+                        
+                        if (url) {
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = model.name;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            log(`SUKSESS: ${model.name}`);
+                        } else {
+                            log(`Fildata mottatt for ${model.name}, men ingen lenke funnet.`, "err");
+                            log(`Data mottatt: ${JSON.stringify(fileObj).substring(0, 100)}...`, "err");
+                        }
                     } else {
-                        log(`KUNNE IKKE FINNE nedlastingslenke for ${model.name}.`, "err");
-                        log("Prøv å sjekke om utvidelsen har 'file.read' rettigheter.", "err");
+                        log(`Klarte ikke å hente fildata for ID: ${model.id}`, "err");
                     }
                 } catch (err) {
-                    log(`FEIL med ${model.name}: ${err.message}`, "err");
+                    log(`FEIL: ${err.message}`, "err");
                 }
                 await new Promise(r => setTimeout(r, 1000));
             }
