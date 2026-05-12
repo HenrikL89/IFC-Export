@@ -1,14 +1,14 @@
 {
   "manifestVersion": 1,
-  "id": "ifc-batch-export-v2025",
-  "name": "IFC Batch Exporter v2",
-  "version": "2.0.0",
+  "id": "ifc-batch-export-cors-fix",
+  "name": "IFC Batch Exporter v3",
+  "version": "3.0.0",
   "publisher": "Henrik",
   "entryPoints": [
     {
       "type": "viewer-side-panel",
       "id": "ifc-export-sidepanel",
-      "name": "IFC Eksport v2",
+      "name": "IFC Eksport v3",
       "url": "https://henrikl89.github.io/IFC-Export/index.html",
       "icon": "https://img.icons8.com/color/48/download.png"
     }
