@@ -40,21 +40,25 @@
         let accessToken = null;
         let activeIFCModels = [];
         
-        // Siden prosjektet ditt er norsk, bruker vi Europa-serveren som standard
-        const TC_BASE_URL = "https://app21.connect.trimble.com/tc/api/2.0";
+        // Liste over mulige Trimble-servere (Europa og USA)
+        const REGIONS = [
+            "https://app21.connect.trimble.com/tc/api/2.0",
+            "https://app.eu.connect.trimble.com/tc/api/2.0",
+            "https://app.connect.trimble.com/tc/api/2.0"
+        ];
 
         async function init() {
             try {
                 API = await TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
                     if (event === "extension.accessToken") {
                         accessToken = typeof args.data === "string" ? args.data : args.data.accessToken;
-                        log("Access Token mottatt.");
+                        log("Token mottatt.");
                         document.getElementById('status').innerText = "Klar";
                     }
                 });
                 await API.extension.requestPermission("accesstoken");
             } catch (err) {
-                log("Feil ved oppstart: " + err.message, "#ff5f56");
+                log("Feil: " + err.message, "#ff5f56");
             }
         }
 
@@ -78,18 +82,15 @@
             try {
                 log("Skanner 3D-visning...");
                 const allModels = await API.viewer.getModels();
-                
                 activeIFCModels = allModels.filter(m => {
                     const isIfc = m.name.toLowerCase().endsWith('.ifc');
-                    const isLoaded = (m.state === 'loaded' || m.loaded === true);
-                    return isIfc && isLoaded;
+                    return isIfc && (m.state === 'loaded' || m.loaded === true);
                 });
 
                 if (activeIFCModels.length === 0) {
                     log("Ingen aktive modeller funnet.", "#ff5f56");
                 } else {
-                    log(`FUNNET: ${activeIFCModels.length} aktive modeller.`);
-                    activeIFCModels.forEach(m => log(` - ${m.name}`));
+                    log(`KLAR: ${activeIFCModels.length} modeller.`);
                     document.getElementById('exportBtn').disabled = false;
                 }
             } catch (err) {
@@ -98,44 +99,36 @@
         });
 
         document.getElementById('exportBtn').addEventListener('click', async () => {
-            if (!accessToken) {
-                log("Mangler Access Token.", "#ff5f56");
-                return;
-            }
-
+            if (!accessToken) return;
             const btn = document.getElementById('exportBtn');
             btn.disabled = true;
-            log("Starter nedlasting fra Europeisk server...");
 
             for (const model of activeIFCModels) {
-                try {
-                    // Vi prøver model.id (som fungerte i debuggen din)
-                    const fileId = model.id;
-                    log(`Henter lenke for ${model.name}...`);
-                    
-                    const response = await fetch(`${TC_BASE_URL}/files/${fileId}`, {
-                        method: "GET",
-                        headers: {
-                            "Authorization": `Bearer ${accessToken}`,
-                            "Accept": "application/json"
+                log(`Søker etter region for ${model.name}...`);
+                let found = false;
+
+                // Prøver hver region til vi får treff (ikke 404)
+                for (const baseUrl of REGIONS) {
+                    try {
+                        const resp = await fetch(`${baseUrl}/files/${model.id}`, {
+                            method: "GET",
+                            headers: { "Authorization": `Bearer ${accessToken}`, "Accept": "application/json" }
+                        });
+
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            if (data.downloadUrl) {
+                                downloadFile(data.downloadUrl, model.name);
+                                log(`SUKSESS: Fant fil i region ${baseUrl.split('//')[1].split('.')[0]}`);
+                                found = true;
+                                break; 
+                            }
                         }
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`Feil ${response.status} (Sjekk om prosjektet er i Europa)`);
-                    }
-
-                    const fileData = await response.json();
-                    
-                    if (fileData.downloadUrl) {
-                        downloadFile(fileData.downloadUrl, model.name);
-                        log(`Suksess: ${model.name}`);
-                    }
-                    
-                    await new Promise(r => setTimeout(r, 1000));
-                } catch (e) {
-                    log(`FEIL med ${model.name}: ${e.message}`, "#ff5f56");
+                    } catch (e) {}
                 }
+
+                if (!found) log(`KUNNE IKKE FINNE ${model.name} på noen servere.`, "#ff5f56");
+                await new Promise(r => setTimeout(r, 800));
             }
             log("Ferdig.");
             btn.disabled = false;
