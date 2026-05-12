@@ -3,97 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IFC Exporter v2</title>
+    <title>IFC Exporter v3</title>
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 15px; }
         .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #0078d4; }
-        .version { float: right; font-size: 10px; color: #9ca3af; }
         h1 { font-size: 18px; color: #0078d4; margin: 0 0 10px 0; }
         .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 12px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 10px; }
         .btn:disabled { background-color: #d1d5db; }
-        #log { margin-top: 15px; background: #111827; color: #10b981; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 11px; height: 250px; overflow-y: auto; }
+        #log { margin-top: 15px; background: #111827; color: #10b981; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 11px; height: 300px; overflow-y: auto; white-space: pre-wrap; }
     </style>
 </head>
 <body>
     <div class="container">
-        <span class="version">v2.0</span>
-        <h1>IFC Exporter</h1>
-        <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn modeller</button>
+        <h1>IFC Exporter <span style="font-size: 10px; color: #999;">v3.0 (CORS FIX)</span></h1>
+        <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn aktive modeller</button>
         <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
         <div id="log">> Venter på tilkobling...</div>
     </div>
 
     <script>
-        let API = null, accessToken = null, currentProjectId = null;
+        let API = null;
         let activeIFCModels = [];
-        
-        // KUN de ekte serverne (ingen app.eu her lenger!)
-        const SERVERS = [
-            "https://app21.connect.trimble.com/tc/api/2.0",
-            "https://app.connect.trimble.com/tc/api/2.0"
-        ];
 
-        async function init() {
-            try {
-                API = await TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
-                    if (event === "extension.accessToken") {
-                        accessToken = typeof args.data === "string" ? args.data : args.data.accessToken;
-                        log("Sikkerhetstoken mottatt.");
-                    }
-                });
-                const project = await API.project.getCurrentProject();
-                currentProjectId = project.id;
-                log(`Prosjekt: ${project.name}`);
-                await API.extension.requestPermission("accesstoken");
-            } catch (err) { log("Start-feil: " + err.message); }
-        }
+        // Initialiserer API-et
+        window.TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
+            // Håndterer meldinger her
+        }).then((api) => {
+            API = api;
+            log("Tilkoblet Trimble Connect API.");
+        });
 
-        function log(msg, isError = false) {
+        function log(msg) {
             const logDiv = document.getElementById('log');
-            logDiv.innerHTML += `<div style="color: ${isError ? '#ff5f56' : '#10b981'}">> ${msg}</div>`;
+            logDiv.innerText += `\n> ${msg}`;
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
         document.getElementById('scanBtn').addEventListener('click', async () => {
+            if (!API) return;
             try {
                 const models = await API.viewer.getModels();
-                activeIFCModels = models.filter(m => m.name.toLowerCase().endsWith('.ifc') && (m.state === 'loaded' || m.loaded === true));
-                log(`Fant ${activeIFCModels.length} aktive IFC-modeller.`);
-                if (activeIFCModels.length > 0) document.getElementById('exportBtn').disabled = false;
-            } catch (err) { log("Skann feilet: " + err.message); }
+                // Filtrerer på .ifc og sjekker om den er loaded
+                activeIFCModels = models.filter(m => 
+                    m.name.toLowerCase().endsWith('.ifc') && 
+                    (m.state === 'loaded' || m.loaded === true)
+                );
+                
+                log(`Fant ${activeIFCModels.length} aktive IFC-filer.`);
+                if (activeIFCModels.length > 0) {
+                    activeIFCModels.forEach(m => log(`- ${m.name}`));
+                    document.getElementById('exportBtn').disabled = false;
+                }
+            } catch (err) {
+                log("FEIL under skanning: " + err.message);
+            }
         });
 
         document.getElementById('exportBtn').addEventListener('click', async () => {
+            if (!API || activeIFCModels.length === 0) return;
+            
+            const btn = document.getElementById('exportBtn');
+            btn.disabled = true;
+            log("Starter nedlasting via Trimble Proxy...");
+
             for (const model of activeIFCModels) {
-                let success = false;
-                log(`Prøver nedlasting: ${model.name}...`);
-                
-                for (const base of SERVERS) {
-                    try {
-                        const url = `${base}/projects/${currentProjectId}/files/${model.id}`;
-                        const resp = await fetch(url, {
-                            headers: { "Authorization": `Bearer ${accessToken}`, "Accept": "application/json" }
-                        });
-                        if (resp.ok) {
-                            const data = await resp.json();
-                            if (data.downloadUrl) {
-                                const a = document.createElement('a');
-                                a.href = data.downloadUrl;
-                                a.download = model.name;
-                                a.click();
-                                log(`SUKSESS via ${base.includes('app21') ? 'Europa' : 'USA'}`);
-                                success = true;
-                                break;
-                            }
+                try {
+                    log(`Behandler: ${model.name}...`);
+                    
+                    // VIKTIG: Vi bruker API-ets egen metode for å hente filen. 
+                    // Dette omgår CORS fordi Trimble Connect (parent) gjør jobben for oss.
+                    // Det nye API-et bruker getFiles([id])
+                    const fileDataArray = await API.project.getFiles([model.id]);
+                    
+                    if (fileDataArray && fileDataArray.length > 0) {
+                        const downloadUrl = fileDataArray[0].downloadUrl;
+                        
+                        if (downloadUrl) {
+                            // Vi "klikker" på lenken for å starte nedlasting
+                            const a = document.createElement('a');
+                            a.href = downloadUrl;
+                            a.download = model.name;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            log(`Suksess: ${model.name}`);
+                        } else {
+                            log(`Kunne ikke generere lenke for ${model.name}`);
                         }
-                    } catch (e) {}
+                    }
+                } catch (err) {
+                    log(`Feil med ${model.name}: ${err.message}`);
+                    console.error(err);
                 }
-                if (!success) log(`KUNNE IKKE FINNE ${model.name}`, true);
+                // Liten pause mellom hver fil
                 await new Promise(r => setTimeout(r, 1000));
             }
+            log("Ferdig.");
+            btn.disabled = false;
         });
-        init();
     </script>
 </body>
 </html>
