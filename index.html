@@ -21,20 +21,18 @@
             padding: 10px; border-radius: 4px; font-family: monospace; 
             font-size: 11px; height: 300px; overflow-y: auto; 
         }
-        .debug-info { font-size: 10px; color: #9ca3af; margin-top: 10px; border-top: 1px solid #e5e7eb; padding-top: 5px; }
     </style>
 </head>
 <body>
 
     <div class="container">
         <h1>IFC Viewer Exporter</h1>
-        <div id="summary" style="font-size: 13px; margin-bottom: 10px; font-weight: bold;">Venter på skanning...</div>
+        <div id="status" style="font-size: 13px; margin-bottom: 10px; font-weight: bold;">Klar</div>
 
         <button id="scanBtn" class="btn" style="background-color: #4b5563;">1. Finn aktive modeller i 3D</button>
-        <button id="exportBtn" class="btn" disabled>2. Last ned aktive filer</button>
+        <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
         
-        <div id="log">> Tilkoblet og klar.</div>
-        <div class="debug-info" id="debug">Debug: Ingen data enda.</div>
+        <div id="log">> Tilkoblet.</div>
     </div>
 
     <script>
@@ -44,12 +42,13 @@
         TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
         }).then((api) => {
             API = api;
-            log("API lastet inn.");
+            log("API klar.");
         });
 
-        function log(msg) {
+        function log(msg, isError = false) {
             const logDiv = document.getElementById('log');
-            logDiv.innerHTML += `<div>> ${msg}</div>`;
+            const color = isError ? "#ff5f56" : "#10b981";
+            logDiv.innerHTML += `<div style="color: ${color}">> ${msg}</div>`;
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
@@ -65,43 +64,23 @@
         document.getElementById('scanBtn').addEventListener('click', async () => {
             if (!API) return;
             try {
-                log("Henter alle modeller...");
                 const allModels = await API.viewer.getModels();
-                
-                log(`Sjekker ${allModels.length} filer for aktiv status...`);
-
-                // DEBUG: Skriv ut egenskapene til den første IFC-modellen den finner i loggen
-                const firstIFC = allModels.find(m => m.name.toLowerCase().endsWith('.ifc'));
-                if (firstIFC) {
-                    document.getElementById('debug').innerText = "Debug info (første IFC): " + JSON.stringify(firstIFC);
-                    console.log("Model properties:", firstIFC);
-                }
-
-                // SMART FILTRERING:
-                // Vi sjekker alle vanlige flagg for om en modell er "skrudd på"
                 activeIFCModels = allModels.filter(m => {
                     const isIfc = m.name.toLowerCase().endsWith('.ifc');
-                    
-                    // Sjekker om noen av disse er sanne (ulike API-versjoner bruker ulike navn)
-                    const isAktiv = (m.loaded === true || m.visible === true || m.enabled === true || m.state === 'loaded');
-                    
+                    const isAktiv = (m.loaded === true || m.visible === true || m.enabled === true);
                     return isIfc && isAktiv;
                 });
 
                 if (activeIFCModels.length === 0) {
-                    log("Fant ingen aktive IFC-modeller.");
-                    log("TIPS: Hvis modellen ER på, sjekk Debug-linjen nederst for å se hvilken status den har.");
-                    document.getElementById('summary').innerText = "0 aktive IFC-filer funnet.";
+                    log("Ingen aktive modeller funnet.", true);
                     document.getElementById('exportBtn').disabled = true;
                 } else {
-                    log(`FUNNET: ${activeIFCModels.length} aktive modeller.`);
+                    log(`KLAR: Fant ${activeIFCModels.length} aktive modeller.`);
                     activeIFCModels.forEach(m => log(` - ${m.name}`));
-                    
-                    document.getElementById('summary').innerText = `Klar: ${activeIFCModels.length} filer funnet.`;
                     document.getElementById('exportBtn').disabled = false;
                 }
             } catch (err) {
-                log("Feil: " + err.message);
+                log("Feil ved skanning: " + err.message, true);
             }
         });
 
@@ -112,16 +91,29 @@
 
             for (let i = 0; i < activeIFCModels.length; i++) {
                 const model = activeIFCModels[i];
+                // VIKTIG: Vi prøver først modelId, deretter id
+                const fileId = model.modelId || model.id;
+                
+                log(`Prøver å hente fil-data for: ${model.name}...`);
+                
                 try {
-                    const fileData = await API.project.getFile(model.id);
-                    downloadFile(fileData.downloadUrl, model.name);
-                    log(`Nedlasting startet: ${model.name}`);
-                    await new Promise(r => setTimeout(r, 1000));
+                    // Vi ber om fileData fra prosjektet
+                    const fileData = await API.project.getFile(fileId);
+                    
+                    if (fileData && fileData.downloadUrl) {
+                        downloadFile(fileData.downloadUrl, model.name);
+                        log(`Suksess: ${model.name}`);
+                    } else {
+                        throw new Error("Ingen nedlastings-URL funnet.");
+                    }
+                    
+                    await new Promise(r => setTimeout(r, 1200));
                 } catch (e) {
-                    log(`Kunne ikke laste ned ${model.name}`);
+                    log(`FEIL med ${model.name}: ${e.message}`, true);
+                    console.error("Nedlastingsfeil:", e);
                 }
             }
-            log("Fullført.");
+            log("Prosess fullført.");
             btn.disabled = false;
         });
     </script>
