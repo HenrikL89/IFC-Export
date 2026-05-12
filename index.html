@@ -3,42 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <title>IFC Exporter v13</title>
-    <!-- Vi bruker samme kilde som i Topics-dashboardet ditt -->
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 15px; color: #1f2937; }
-        .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 8px solid #000; }
+        .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 10px solid #111; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         h1 { font-size: 18px; color: #111827; margin: 0; }
-        .version { font-size: 10px; background: #000; color: #fff; padding: 2px 6px; border-radius: 4px; }
+        .version-badge { background: #111; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; }
         .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 12px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 10px; }
         .btn:disabled { background-color: #d1d5db; cursor: not-allowed; }
-        #log { background: #111827; color: #10b981; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 11px; height: 250px; overflow-y: auto; white-space: pre-wrap; }
+        #log { background: #111827; color: #10b981; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; height: 250px; overflow-y: auto; white-space: pre-wrap; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>IFC Exporter</h1>
-            <span class="version">v13.0</span>
+            <span class="version-badge">VERSION 13.0</span>
         </div>
         
         <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn aktive modeller</button>
         <button id="exportBtn" class="btn" disabled>2. Start nedlasting</button>
         
-        <div id="log">> Kobler til API...</div>
+        <div id="log">> Initialiserer API...</div>
     </div>
 
     <script>
         let API = null;
         let activeIFCModels = [];
 
-        // Initialiserer slik som i Topics-dashboardet
+        // Kobler til Trimble Connect
         TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
-            // Håndterer token-oppdateringer her hvis nødvendig
         }).then((api) => {
             API = api;
-            log("Tilkoblet Trimble Connect.");
+            log("Tilkoblet Trimble Connect API.");
         }).catch(err => {
             log("FEIL ved tilkobling: " + err.message);
         });
@@ -53,13 +51,12 @@
             if (!API) return;
             try {
                 const models = await API.viewer.getModels();
-                // Vi finner modeller som er synlige/lastet i vieweren
                 activeIFCModels = models.filter(m => 
                     m.name.toLowerCase().endsWith('.ifc') && 
                     (m.state === 'loaded' || m.loaded === true || m.visible === true)
                 );
                 
-                log(`Fant ${activeIFCModels.length} aktive IFC-modeller.`);
+                log(`Fant ${activeIFCModels.length} aktive IFC-filer.`);
                 if (activeIFCModels.length > 0) {
                     activeIFCModels.forEach(m => log(`- ${m.name}`));
                     document.getElementById('exportBtn').disabled = false;
@@ -79,11 +76,9 @@
             for (const model of activeIFCModels) {
                 try {
                     log(`Henter ${model.name}...`);
-
-                    // VIKTIG: Vi bruker API-ets innebygde funksjoner for å unngå CORS.
-                    // Vi prøver flere varianter siden biblioteket kan variere.
                     let fileResult = null;
 
+                    // Bruker APIets interne metoder for å unngå CORS
                     if (API.project && typeof API.project.getFiles === 'function') {
                         const results = await API.project.getFiles([model.id]);
                         fileResult = results[0];
@@ -92,7 +87,6 @@
                     }
 
                     if (fileResult && fileResult.downloadUrl) {
-                        // Vi har nå en URL som er godkjent for nedlasting
                         const a = document.createElement('a');
                         a.href = fileResult.downloadUrl;
                         a.download = model.name;
@@ -101,15 +95,13 @@
                         document.body.removeChild(a);
                         log(`SUKSESS: ${model.name}`);
                     } else {
-                        log(`Kunne ikke hente lenke for ${model.name}.`);
+                        log(`FEIL: Ingen nedlastingslenke for ${model.name}.`);
                     }
                 } catch (err) {
-                    log(`FEIL med ${model.name}: ${err.message}`);
+                    log(`FEIL: ${err.message}`);
                 }
-                // Pause for å unngå at nettleseren blokkerer flere nedlastinger
                 await new Promise(r => setTimeout(r, 1000));
             }
-
             log("Ferdig.");
             btn.disabled = false;
         });
