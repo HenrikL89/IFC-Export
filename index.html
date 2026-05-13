@@ -2,36 +2,35 @@
 <html lang="no">
 <head>
     <meta charset="UTF-8">
-    <title>IFC Exporter v21</title>
+    <title>IFC Exporter v22</title>
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 15px; }
-        .container { max-width: 500px; margin: 0 auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 10px solid #ef4444; }
-        .version-badge { background: #ef4444; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-align: center; display: block; margin-bottom: 10px; }
-        h1 { font-size: 18px; color: #111827; margin: 0 0 10px 0; }
-        .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 12px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 10px; }
-        .btn:disabled { background-color: #d1d5db; cursor: not-allowed; }
-        #log { background: #111827; color: #10b981; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; height: 200px; overflow-y: auto; white-space: pre-wrap; margin-bottom: 10px; }
-        .manual-btn { display: block; background: #10b981; color: white; text-decoration: none; padding: 12px; border-radius: 5px; text-align: center; font-weight: bold; margin-top: 8px; font-size: 13px; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 10px; }
+        .container { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 10px solid #6366f1; }
+        .version-badge { background: #6366f1; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-align: center; display: block; margin-bottom: 10px; }
+        h1 { font-size: 16px; color: #111827; margin: 0 0 10px 0; }
+        .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 10px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 8px; }
+        .btn:disabled { background-color: #d1d5db; }
+        #log { background: #111; color: #10b981; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 9px; height: 250px; overflow-y: auto; white-space: pre-wrap; margin-bottom: 10px; border: 1px solid #333; }
+        .debug-box { background: #fffbeb; border: 1px solid #f59e0b; padding: 8px; border-radius: 4px; font-size: 10px; margin-bottom: 10px; color: #92400e; }
+        .download-group { border: 1px solid #e5e7eb; padding: 8px; margin-bottom: 10px; border-radius: 5px; background: #fafafa; }
+        .manual-btn { display: block; background: #10b981; color: white; text-decoration: none; padding: 8px; border-radius: 4px; text-align: center; font-weight: bold; margin-top: 5px; font-size: 11px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="version-badge">VERSION 21.0 (RØD DIAMANT)</div>
+        <div class="version-badge">VERSION 22.0 (DEEP DEBUG)</div>
         <h1>IFC Exporter</h1>
         
-        <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn aktive modeller</button>
-        <button id="exportBtn" class="btn" disabled>2. Generer nedlastingslenker</button>
+        <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn modeller & Debug</button>
+        <button id="exportBtn" class="btn" disabled>2. Generer test-lenker</button>
         
         <div id="log">> Initialiserer API...</div>
         <div id="fileList"></div>
     </div>
 
     <script>
-        let API = null;
-        let accessToken = null;
-        let currentProjectId = null;
-        let activeIFCModels = [];
+        let API = null, accessToken = null, currentProjectId = null, activeIFCModels = [];
 
         async function init() {
             try {
@@ -40,15 +39,11 @@
                         accessToken = typeof args.data === "string" ? args.data : args.data.accessToken;
                     }
                 });
-                
-                // Henter Prosjekt-ID dynamisk fra sesjonen
                 const project = await API.project.getCurrentProject();
                 currentProjectId = project.id;
-                log(`Prosjekt-ID: ${currentProjectId}`);
-
                 await API.extension.requestPermission("accesstoken");
-                log("API klar.");
-            } catch (err) { log("Feil: " + err.message); }
+                log("API Klar.");
+            } catch (err) { log("Start-feil: " + err.message); }
         }
 
         function log(msg) {
@@ -61,13 +56,17 @@
             if (!API) return;
             try {
                 const models = await API.viewer.getModels();
-                // Vi logger ALL data for å være sikker på at vi ser GUIDen
-                console.log("Model Debug:", models);
-
-                activeIFCModels = models.filter(m => 
-                    m.name.toLowerCase().endsWith('.ifc') && 
-                    (m.state === 'loaded' || m.loaded === true)
-                );
+                activeIFCModels = models.filter(m => m.name.toLowerCase().endsWith('.ifc') && (m.state === 'loaded' || m.loaded === true));
+                
+                if (activeIFCModels.length > 0) {
+                    const m = activeIFCModels[0];
+                    log("DEBUG INFO FOR FIL:");
+                    log(`Navn: ${m.name}`);
+                    log(`ID: ${m.id}`);
+                    log(`modelId: ${m.modelId || 'Mangler'}`);
+                    log(`versionId: ${m.versionId || 'Mangler'}`);
+                    log(`Prosjekt: ${currentProjectId}`);
+                }
                 
                 log(`Fant ${activeIFCModels.length} aktive modeller.`);
                 document.getElementById('exportBtn').disabled = false;
@@ -75,34 +74,48 @@
         });
 
         document.getElementById('exportBtn').addEventListener('click', async () => {
-            if (!accessToken || !currentProjectId) {
+            if (!accessToken) {
                 const result = await API.extension.requestPermission("accesstoken");
                 accessToken = result.accessToken || result;
             }
 
-            log("Genererer lenker for Europeisk server...");
             const fileList = document.getElementById('fileList');
             fileList.innerHTML = ""; 
 
             activeIFCModels.forEach((model) => {
-                // Vi bruker model.modelId (GUID) som vi så i loggen din
-                const realFileId = model.modelId || model.versionId || model.id;
+                const id = model.modelId || model.id;
+                const pId = currentProjectId;
+                const token = accessToken;
                 
-                // Vi prøver det mest direkte endepunktet for nedlasting i Europa
-                const directUrl = `https://app21.connect.trimble.com/tc/api/2.0/files/${realFileId}/download?access_token=${accessToken}`;
+                const group = document.createElement('div');
+                group.className = 'download-group';
+                group.innerHTML = `<strong>${model.name}</strong><br><span style="font-size:9px">Velg lenken som fungerer:</span>`;
 
-                const dl = document.createElement('a');
-                dl.className = "manual-btn";
-                dl.href = directUrl;
-                // VIKTIG: target="_blank" hopper ut av iframen og omgår X-Frame-Options
-                dl.target = "_blank"; 
-                dl.rel = "noopener noreferrer";
-                dl.innerText = "LAST NED: " + model.name;
-                
-                fileList.appendChild(dl);
-                log(`Klar: ${model.name}`);
+                // TEST LENKE 1: Standard v2.0 (Uten prosjekt-sti)
+                const url1 = `https://app21.connect.trimble.com/tc/api/2.0/files/${id}/download?access_token=${token}`;
+                group.appendChild(createBtn(url1, "Test 1: Standard API"));
+
+                // TEST LENKE 2: Full Prosjekt-sti (Mest brukt i Europa)
+                const url2 = `https://app21.connect.trimble.com/tc/api/2.0/projects/${pId}/files/${id}/download?access_token=${token}`;
+                group.appendChild(createBtn(url2, "Test 2: Prosjekt-sti"));
+
+                // TEST LENKE 3: Version-basert (Hvis modelId egentlig er en versionId)
+                const url3 = `https://app21.connect.trimble.com/tc/api/2.0/projects/${pId}/versions/${id}/download?access_token=${token}`;
+                group.appendChild(createBtn(url3, "Test 3: Versjon-sti"));
+
+                fileList.appendChild(group);
             });
+            log("Lenker generert. Test dem i rekkefølge.");
         });
+
+        function createBtn(url, text) {
+            const a = document.createElement('a');
+            a.className = "manual-btn";
+            a.href = url;
+            a.target = "_blank";
+            a.innerText = text;
+            return a;
+        }
 
         init();
     </script>
