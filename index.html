@@ -2,43 +2,65 @@
 <html lang="no">
 <head>
     <meta charset="UTF-8">
-    <title>IFC Exporter v24</title>
+    <title>IFC Exporter v25</title>
     <script src="https://components.connect.trimble.com/trimble-connect-workspace-api/index.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f3f4f6; padding: 10px; }
-        .container { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 10px solid #8b5cf6; }
-        .version-badge { background: #8b5cf6; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-align: center; display: block; margin-bottom: 10px; }
+        .container { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 10px solid #10b981; }
+        .version-badge { background: #10b981; color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-align: center; display: block; margin-bottom: 10px; }
+        .token-status { font-size: 10px; padding: 5px; margin-bottom: 10px; border-radius: 4px; text-align: center; font-weight: bold; }
+        .token-ok { background: #dcfce7; color: #166534; }
+        .token-missing { background: #fee2e2; color: #991b1b; }
         h1 { font-size: 16px; margin: 0 0 10px 0; }
         .btn { background-color: #0078d4; color: white; border: none; border-radius: 5px; padding: 10px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 8px; }
-        #log { background: #111; color: #10b981; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 10px; height: 350px; overflow-y: auto; white-space: pre-wrap; margin-bottom: 10px; border: 1px solid #333; }
-        .id-card { background: #f9fafb; border: 1px solid #ddd; padding: 8px; margin-bottom: 10px; border-radius: 4px; font-size: 11px; }
-        .manual-btn { display: block; background: #8b5cf6; color: white; text-decoration: none; padding: 8px; border-radius: 4px; text-align: center; font-weight: bold; margin-top: 5px; }
+        #log { background: #111; color: #10b981; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 10px; height: 150px; overflow-y: auto; white-space: pre-wrap; margin-bottom: 10px; }
+        .manual-btn { display: block; background: #10b981; color: white; text-decoration: none; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; margin-top: 5px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="version-badge">VERSION 24.0 (ID-DISCOVERY)</div>
+        <div class="version-badge">VERSION 25.0 (TOKEN FORCE)</div>
+        <div id="tokenIndicator" class="token-status token-missing">Sjekker tilgang...</div>
         <h1>IFC Exporter</h1>
-        <button id="scanBtn" class="btn" style="background: #4b5563;">1. Finn modeller & skann IDer</button>
-        <div id="log">> Venter på API...</div>
+        
+        <button id="scanBtn" class="btn" style="background: #4b5563;">Søk etter aktive modeller</button>
+        
+        <div id="log">> Initialiserer...</div>
         <div id="fileList"></div>
     </div>
 
     <script>
-        let API = null, accessToken = null, currentProjectId = null;
+        let API = null;
+        let accessToken = null;
+        let currentProjectId = null;
 
         async function init() {
             try {
                 API = await TrimbleConnectWorkspace.connect(window.parent, (event, args) => {
                     if (event === "extension.accessToken" && args.data) {
-                        accessToken = typeof args.data === "string" ? args.data : args.data.accessToken;
+                        updateToken(args.data.accessToken || args.data);
                     }
                 });
+
                 const project = await API.project.getCurrentProject();
                 currentProjectId = project.id;
-                await API.extension.requestPermission("accesstoken");
-                log("Tilkoblet.");
+                
+                // Tving frem forespørsel om token
+                const result = await API.extension.requestPermission("accesstoken");
+                if (result) updateToken(result.accessToken || result);
+
+                log("API Tilkoblet.");
             } catch (err) { log("Feil: " + err.message); }
+        }
+
+        function updateToken(token) {
+            if (typeof token === 'string' && token.length > 10) {
+                accessToken = token;
+                const ind = document.getElementById('tokenIndicator');
+                ind.innerText = "TILGANG OK (NØKKEL MOTTATT)";
+                ind.className = "token-status token-ok";
+                log("Sikkerhetsnøkkel oppdatert.");
+            }
         }
 
         function log(msg) {
@@ -49,45 +71,56 @@
 
         document.getElementById('scanBtn').addEventListener('click', async () => {
             if (!API) return;
+            
+            // Hvis vi mangler token, prøv å hente det en gang til akkurat nå
+            if (!accessToken) {
+                log("Mangler nøkkel, prøver å hente på nytt...");
+                const result = await API.extension.requestPermission("accesstoken");
+                if (result) updateToken(result.accessToken || result);
+            }
+
             try {
                 const models = await API.viewer.getModels();
                 const list = document.getElementById('fileList');
                 list.innerHTML = "";
                 
-                const activeIFC = models.filter(m => m.name.toLowerCase().endsWith('.ifc') && (m.state === 'loaded' || m.loaded === true));
+                const activeIFC = models.filter(m => 
+                    m.name.toLowerCase().endsWith('.ifc') && 
+                    (m.state === 'loaded' || m.loaded === true)
+                );
+
                 log(`Fant ${activeIFC.length} aktive modeller.`);
 
                 activeIFC.forEach(m => {
-                    // ID-DETEKTIV: Vi leter etter alle mulige steder en GUID kan gjemme seg
-                    // Vi prioriterer alt som IKKE starter med understrek (_)
-                    const potentialIds = [
-                        { name: "modelId", val: m.modelId },
-                        { name: "versionId", val: m.versionId },
-                        { name: "fileId", val: m.fileId },
-                        { name: "id (original)", val: m.id }
-                    ].filter(item => item.val && !String(item.val).startsWith('_'));
-
-                    // Hvis vi bare har den med understrek, legg den til som nødvalg
-                    if (potentialIds.length === 0) potentialIds.push({ name: "id (fallback)", val: m.id });
-
-                    const card = document.createElement('div');
-                    card.className = "id-card";
-                    card.innerHTML = `<strong>${m.name}</strong><br>IDer funnet:`;
+                    // Vi prioriterer den ID-en vi så i loggen din som fungerte (pADf...)
+                    const realId = m.modelId || m.versionId || m.fileId || m.id;
                     
-                    potentialIds.forEach(p => {
-                        const url = `https://app21.connect.trimble.com/tc/api/2.0/files/${p.val}/download?access_token=${accessToken}`;
-                        const btn = document.createElement('a');
-                        btn.className = "manual-btn";
-                        btn.href = url;
-                        btn.target = "_blank";
-                        btn.innerText = `Last ned via ${p.name}`;
-                        card.appendChild(btn);
-                    });
+                    const card = document.createElement('div');
+                    card.style.padding = "10px";
+                    card.style.border = "1px solid #ddd";
+                    card.style.marginTop = "10px";
+                    card.style.borderRadius = "5px";
+                    card.innerHTML = `<strong>${m.name}</strong>`;
 
+                    const url = `https://app21.connect.trimble.com/tc/api/2.0/files/${realId}/download?access_token=${accessToken}`;
+                    
+                    const btn = document.createElement('a');
+                    btn.className = "manual-btn";
+                    btn.href = url;
+                    btn.target = "_blank";
+                    btn.innerText = "LAST NED FIL";
+                    
+                    // Ekstra sikkerhet: hvis token fortsatt er null, deaktiver knappen
+                    if (!accessToken) {
+                        btn.style.background = "#ccc";
+                        btn.innerText = "Venter på nøkkel...";
+                        btn.onclick = (e) => { e.preventDefault(); alert("Vennligst vent til 'TILGANG OK' lyser grønt."); };
+                    }
+
+                    card.appendChild(btn);
                     list.appendChild(card);
                 });
-                
-            } catch (err) { log("Skanning feilet."); }
+            } catch (err) { log("Skann feilet."); }
         });
 
         init();
